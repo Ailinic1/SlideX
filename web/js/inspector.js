@@ -16,7 +16,7 @@ import { icon } from './icons.js';
 import { ROLES, ROLE_LABELS, isHex, resolveColor } from '../shared/color.js';
 import { FAMILIES, FAMILY_LABELS } from '../shared/fonts.js';
 import { CHART_KINDS, parseTable, normalizeData, sampleData } from '../shared/charts.js';
-import { PATTERN_KINDS, PATTERN_SCHEMES, newSeed } from '../shared/patterns.js';
+import { PATTERN_GROUPS, PATTERN_SCHEMES, newSeed } from '../shared/patterns.js';
 import { searchGlyphs, glyphLabel } from '../shared/glyphs.js';
 import { ELEMENT_TYPES, FIELD_KINDS, TEXT_PRESETS, numbering, slideTitle } from '../shared/model.js';
 
@@ -586,9 +586,12 @@ function linePanel(host, o, el, s, c, style, content) {
 
 function patternPanel(host, o, el, s, c, style, content) {
   host.append(section('Generated graphic', [
+    // Twenty-five kinds is too many for one flat list, so they come in the
+    // groups they are named by: lines, grids, dots, shapes.
     row('Kind', h('select.input.sm', {
       onchange: (e) => style({ kind: e.target.value }),
-    }, Object.entries(PATTERN_KINDS).map(([id, label]) => h('option', { value: id, selected: id === s.kind }, label)))),
+    }, Object.entries(PATTERN_GROUPS).map(([group, kinds]) => h('optgroup', { label: group },
+      Object.entries(kinds).map(([id, label]) => h('option', { value: id, selected: id === s.kind }, label)))))),
     row('Colours', h('select.input.sm', {
       onchange: (e) => style({ scheme: e.target.value }),
     }, Object.entries(PATTERN_SCHEMES).map(([id, label]) => h('option', { value: id, selected: id === s.scheme }, label)))),

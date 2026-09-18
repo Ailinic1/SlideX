@@ -36,7 +36,7 @@
 import { makeElement, makeDeck, makeLayout, makeSlide, ASPECTS, newId, LAYOUT_KINDS } from './model.js';
 import { PALETTES, completePalette, resolveColor, contrast, contrastFloor, readableRole } from './color.js';
 import { sampleData } from './charts.js';
-import { rng, newSeed } from './patterns.js';
+import { rng, newSeed, PATTERN_KINDS } from './patterns.js';
 import { layoutText } from './text.js';
 
 export const GENERATOR_VERSION = 1;
@@ -104,8 +104,11 @@ function makeTheme(random, opts) {
     sectionStyle: weighted(random, [['full', 4], ['half', 3], ['number', 3]]),
     // Where the slide number sits, and whether there is a footer at all.
     chrome: weighted(random, [['corner', 5], ['band', 2], ['none', 2]]),
+    // Any of the kinds, since every one of them is drawn to sit behind text at
+    // the opacities the layouts use. A deck gets one kind and keeps it: the
+    // variety is meant to be between decks, not between slides.
     pattern: {
-      kind: random.pick(['network', 'waves', 'contours', 'orbits', 'hexes', 'halftone', 'blobs', 'bars', 'confetti', 'mosaic']),
+      kind: random.pick(Object.keys(PATTERN_KINDS)),
       density: half((0.7 + random() * 0.6) * 10) / 10,
     },
   };

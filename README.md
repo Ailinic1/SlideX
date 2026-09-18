@@ -191,11 +191,15 @@ copied from Excel, Google Sheets or a CSV over it.
 every icon on a slide matches every other. Search them by what they mean
 (*risk*, *growth*, *deadline*), and put one on a circle, square or ring badge.
 
-**Generated graphics** - networks, waves, halftone, contours, mosaic, orbits,
-data bars, hexagons, confetti, blobs - are drawn from a seed in the palette's
-colours. **Shuffle** is nothing more than a new seed. The seed is saved with
-the slide, so the picture is the same on reload, on a colleague's computer and
-in the PDF.
+**Generated graphics** - twenty-six of them, grouped by the mood they have:
+lines and fields (networks, waves, contours, orbits, flow lines, topography,
+rays, spirals), grids and tiles (mosaic, hexagons, grid, isometric, weave,
+lattice, circuit), dots (halftone, confetti, starfield, bubbles, scatter) and
+shapes (blobs, data bars, stripes, arcs, steps, shards). Each is drawn from a
+seed in the palette's colours, and fades towards whatever it sits on, so a soft
+tint on a dark slide is dark. **Shuffle** is nothing more than a new seed. The
+seed is saved with the slide, so the picture is the same on reload, on a
+colleague's computer and in the PDF.
 
 ---
 

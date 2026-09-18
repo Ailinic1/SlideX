@@ -30,7 +30,9 @@ export function renderSlide(slide, ctx) {
   const W = deck.size.width;
   const H = deck.size.height;
   const numbers = ctx.numbers || numbering(deck);
-  const inner = { ...ctx, numbers };
+  // Generated graphics fade towards whatever they sit on, so the slide's own
+  // background travels with the context: on a dark slide a soft tint is dark.
+  const inner = { ...ctx, numbers, surface: slide.background || 'paper' };
   const ops = [];
   const report = {};
   const bg = resolveColor(slide.background || 'paper', palette) || '#ffffff';
@@ -126,7 +128,8 @@ function drawElement(items, el, ctx, palette, note) {
       const clip = roundedRect(el.x, el.y, el.w, el.h, Number(s.radius) || 0);
       const inner = [];
       if (fill) inner.push({ t: 'rect', x: el.x, y: el.y, w: el.w, h: el.h, fill });
-      inner.push(...renderPattern({ ...s, seed: c.seed }, { x: el.x, y: el.y, w: el.w, h: el.h }, palette));
+      inner.push(...renderPattern({ ...s, seed: c.seed }, { x: el.x, y: el.y, w: el.w, h: el.h }, palette,
+        { surface: s.fill || ctx.surface || 'paper' }));
       items.push({ t: 'group', clip, items: inner });
       break;
     }

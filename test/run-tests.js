@@ -11,7 +11,7 @@ import { parseRich, layoutText, wordCount, indentLevel } from '../web/shared/tex
 import { parsePath, arcToCubics } from '../web/shared/path.js';
 import { resolveColor, PALETTES, contrast, seriesColors, textOn } from '../web/shared/color.js';
 import { renderChart, niceScale, parseTable, formatNumber, CHART_KINDS, sampleData } from '../web/shared/charts.js';
-import { renderPattern, PATTERN_KINDS, rng, hashSeed } from '../web/shared/patterns.js';
+import { renderPattern, PATTERN_KINDS, PATTERN_GROUPS, PATTERN_SCHEMES, QUIET_KINDS, rng, hashSeed } from '../web/shared/patterns.js';
 import { GLYPHS, CONTENT_NAMES, searchGlyphs } from '../web/shared/glyphs.js';
 import { buildStarter, STARTERS } from '../web/shared/starters.js';
 import {
@@ -571,6 +571,90 @@ test('a generated graphic is the same for the same seed, and different for anoth
     assert.deepStrictEqual(a, b, kind + ' is not the same twice for one seed');
     assert.notDeepStrictEqual(a, c, kind + ' ignores its seed');
   }
+});
+
+test('there are twenty-six kinds of graphic, each in a group, and each draws', () => {
+  const kinds = Object.keys(PATTERN_KINDS);
+  assert.ok(kinds.length >= 25, 'only ' + kinds.length + ' kinds');
+  // Every kind belongs to exactly one group, and the groups name every kind.
+  const grouped = Object.values(PATTERN_GROUPS).flatMap((g) => Object.keys(g));
+  assert.deepStrictEqual(grouped.slice().sort(), kinds.slice().sort());
+  assert.strictEqual(new Set(grouped).size, grouped.length, 'a kind is in two groups');
+  for (const kind of QUIET_KINDS) assert.ok(PATTERN_KINDS[kind], QUIET_KINDS + ' names a kind that does not exist: ' + kind);
+
+  const box = { x: 12, y: 8, w: 400, h: 260 };
+  for (const kind of kinds) {
+    for (const scheme of Object.keys(PATTERN_SCHEMES)) {
+      const ops = renderPattern({ kind, seed: kind + scheme, scheme, density: 1.2 }, box, PALETTES.harbor);
+      assert.ok(ops.length, kind + '/' + scheme + ' drew nothing');
+      for (const op of ops) {
+        for (const [key, value] of Object.entries(op)) {
+          if (typeof value === 'number') assert.ok(Number.isFinite(value), kind + '/' + scheme + ': ' + key + ' is ' + value);
+        }
+        // Everything is a drawing operation the SVG writer and the PDF writer
+        // both know; a graphic that invented one would draw on screen and be
+        // missing from the file.
+        assert.ok(['rect', 'ellipse', 'line', 'path', 'text', 'image', 'group'].includes(op.t), kind + ' drew a ' + op.t);
+        if (op.t === 'path') assert.ok(op.segs && op.segs.length, kind + ' drew an empty path');
+      }
+    }
+  }
+});
+
+test('a graphic fades towards the surface it is on, not towards paper', () => {
+  const box = { x: 0, y: 0, w: 300, h: 200 };
+  const light = renderPattern({ kind: 'topography', seed: 'k', scheme: 'soft' }, box, PALETTES.harbor, { surface: 'paper' });
+  const dark = renderPattern({ kind: 'topography', seed: 'k', scheme: 'soft' }, box, PALETTES.harbor, { surface: 'ink' });
+  const brightness = (ops) => {
+    const fills = ops.map((op) => op.fill).filter(Boolean);
+    return fills.reduce((n, f) => n + (parseInt(f.slice(1, 3), 16) + parseInt(f.slice(3, 5), 16) + parseInt(f.slice(5, 7), 16)) / 3, 0) / fills.length;
+  };
+  // Same seed, same shapes; only the colours differ, and the dark one is dark.
+  assert.deepStrictEqual(light.map((o) => o.segs), dark.map((o) => o.segs));
+  assert.ok(brightness(dark) < brightness(light) - 40, 'on ink it is as bright as on paper: ' + brightness(dark) + ' vs ' + brightness(light));
+});
+
+test('a graphic on a dark slide is told the slide is dark', () => {
+  // The fade has to follow the slide's own background, not just the graphic's
+  // own fill, or a soft tint becomes the brightest thing on a dark slide.
+  const draw = (background) => {
+    const deck = deckOf(1);
+    const slide = deck.slides[0];
+    layoutOf(deck, slide.layout).background = background;
+    slide.extras = [{
+      id: 'p1', type: 'pattern', x: 0, y: 0, w: 400, h: 300,
+      style: { kind: 'topography', scheme: 'soft' }, content: { seed: 'k' },
+    }];
+    const ops = renderSlide(resolveSlide(deck, slide), { deck, slide, draft: false }).ops;
+    const group = ops.find((o) => o.el === 'p1');
+    return group.items[0].items.map((o) => o.fill).filter(Boolean);
+  };
+  const light = draw('paper');
+  const dark = draw('ink');
+  const brightness = (fills) => fills.reduce((n, f) => n + (parseInt(f.slice(1, 3), 16) + parseInt(f.slice(3, 5), 16) + parseInt(f.slice(5, 7), 16)) / 3, 0) / fills.length;
+  assert.ok(light.length && dark.length, 'the graphic drew nothing');
+  assert.ok(brightness(dark) < brightness(light) - 40, 'the graphic ignored the slide behind it');
+});
+
+test('every kind of graphic is the same for one seed and different for another', () => {
+  const box = { x: 0, y: 0, w: 320, h: 200 };
+  for (const kind of Object.keys(PATTERN_KINDS)) {
+    const once = renderPattern({ kind, seed: 'same', scheme: 'brand' }, box, PALETTES.meadow);
+    const again = renderPattern({ kind, seed: 'same', scheme: 'brand' }, box, PALETTES.meadow);
+    const other = renderPattern({ kind, seed: 'other', scheme: 'brand' }, box, PALETTES.meadow);
+    assert.deepStrictEqual(once, again, kind + ' is not the same twice for one seed');
+    assert.notDeepStrictEqual(once, other, kind + ' ignores its seed');
+  }
+});
+
+test('no kind of graphic draws so much that a slide becomes slow', () => {
+  const box = { x: 0, y: 0, w: 960, h: 540 };
+  const heavy = [];
+  for (const kind of Object.keys(PATTERN_KINDS)) {
+    const ops = renderPattern({ kind, seed: 'big', scheme: 'brand', density: 2.5 }, box, PALETTES.harbor);
+    if (ops.length > 4000) heavy.push(kind + ': ' + ops.length + ' operations');
+  }
+  assert.deepStrictEqual(heavy, [], heavy.join(', '));
 });
 
 test('the random number generator gives the same numbers everywhere', () => {

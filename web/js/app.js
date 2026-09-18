@@ -110,6 +110,22 @@ export function setSaving(what) {
   paintSave();
 }
 
+/**
+ * The title bar's subtitle and the status bar, repainted where they stand.
+ *
+ * Both of them say which slide is which, and both read the numbering, so they
+ * are repainted whenever the deck's order or the slide in front of you
+ * changes - which is most of what the editor does.
+ */
+export function refreshChrome() {
+  const title = document.querySelector('.doc-title');
+  if (title && state.open) clear(title).append(h('strong', state.open.record.name), ' \u00b7 ' + slideCount());
+  const bar = document.querySelector('.statusbar');
+  if (bar && state.open) {
+    clear(bar).append(h('span.dim', state.open.record.name), h('span.spacer'), ...editorStatus());
+  }
+}
+
 function statusbar(right) {
   return h('div.statusbar', [
     h('span.dim', state.open ? state.open.record.name : 'SlideX ' + (state.about ? state.about.version : '')),

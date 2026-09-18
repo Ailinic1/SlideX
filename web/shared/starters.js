@@ -93,18 +93,24 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
   /* ------------------------------------------------------------- title */
   {
     const els = [];
-    const top = banded ? 0 : t.H * 0.28;
-    if (banded) els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H * 0.62 }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Title band', fixed: true }));
-    const onBand = banded ? 'paper' : 'primary';
+    // Banded: the whole slide in the primary colour, with a stripe of accent
+    // down the left. Plain: the title on paper, over a short accent rule.
+    const titleY = banded ? t.H * 0.34 : t.H * 0.30;
+    if (banded) {
+      els.push(
+        el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Title background', fixed: true }),
+        el('shape', { x: 0, y: 0, w: 10, h: t.H }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title stripe', fixed: true }),
+      );
+    }
+    const ink = banded ? 'paper' : 'primary';
     const under = banded ? 'tint' : 'muted';
-    const titleY = banded ? t.H * 0.62 - 190 : top;
     els.push(
-      text({ x: t.m, y: titleY, w: t.span(9), h: 26 }, '{deck}', { size: 13, bold: true, transform: 'upper', tracking: 140, color: banded ? 'highlight' : 'accent', fit: 'shrink' }, 'Kicker', 'label'),
-      text({ x: t.m, y: titleY + 34, w: t.span(9), h: 110 }, 'The title of this deck', { size: 48, bold: true, color: onBand, lineHeight: 1.06, fit: 'shrink' }, 'Title', 'title'),
-      text({ x: t.m, y: titleY + 152, w: t.span(8), h: 38 }, 'Who is presenting, and when', { size: 18, color: under, fit: 'shrink' }, 'Subtitle', 'subtitle'),
+      text({ x: t.m, y: titleY - 42, w: t.span(9), h: 26 }, '{deck}', { size: 13, bold: true, transform: 'upper', tracking: 140, color: banded ? 'highlight' : 'accent', fit: 'shrink' }, 'Kicker', 'label'),
+      text({ x: t.m, y: titleY, w: t.span(9), h: 112 }, 'The title of this deck', { size: 48, bold: true, color: ink, lineHeight: 1.06, fit: 'shrink' }, 'Title', 'title'),
+      text({ x: t.m, y: titleY + 124, w: t.span(8), h: 38 }, 'Who is presenting, and when', { size: 18, color: under, fit: 'shrink' }, 'Subtitle', 'subtitle'),
     );
-    if (!banded) els.push(el('shape', { x: t.m, y: titleY + 20, w: t.span(2), h: 4 }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title rule', fixed: true }));
-    els.push(el('field', { x: t.m, y: t.footY, w: t.span(6), h: t.footH }, { size: 11, color: banded ? 'muted' : 'muted', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }));
+    if (!banded) els.push(el('shape', { x: t.m, y: titleY - 14, w: t.span(2), h: 4 }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title rule', fixed: true }));
+    els.push(el('field', { x: t.m, y: t.footY, w: t.span(6), h: t.footH }, { size: 11, color: under, align: 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }));
     layout('Title', 'title', els);
   }
 
@@ -114,7 +120,7 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
     if (banded) els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Section background', fixed: true }));
     const ink = banded ? 'paper' : 'primary';
     els.push(
-      el('field', { x: t.m, y: t.H / 2 - 92, w: t.span(3), h: 44 }, { size: 38, bold: true, color: banded ? 'highlight' : 'accent', valign: 'middle', fit: 'shrink' }, { field: 'number' }, { name: 'Section number' }),
+      el('field', { x: t.m, y: t.H / 2 - 96, w: t.span(3), h: 46 }, { size: 38, bold: true, color: banded ? 'highlight' : 'accent', align: 'left', valign: 'bottom', fit: 'shrink' }, { field: 'number' }, { name: 'Section number' }),
       text({ x: t.m, y: t.H / 2 - 40, w: t.span(9), h: 76 }, 'Section title', { size: 40, bold: true, color: ink, lineHeight: 1.1, fit: 'shrink' }, 'Section title', 'title'),
       text({ x: t.m, y: t.H / 2 + 44, w: t.span(7), h: 52 }, 'A line about what this part covers', { size: 17, color: banded ? 'tint' : 'muted', fit: 'shrink' }, 'Section note', 'subtitle'),
     );

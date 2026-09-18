@@ -2,6 +2,9 @@
 //
 // Laid out as Newsx's test/run-tests.js is: no dependencies, one small harness,
 // and `node test/run-tests.js` runs the lot.
+import fs from 'fs';
+import path from 'path';
+import zlib from 'zlib';
 import { test, assert, run } from './harness.js';
 import { measure, printable, unprintable } from '../web/shared/fonts.js';
 import { parseRich, layoutText, wordCount, indentLevel } from '../web/shared/text.js';
@@ -20,6 +23,10 @@ import { numbering, slideTitle, sectionsOf, resolveReference } from '../web/shar
 import { renderSlide, contrastOf } from '../web/shared/scene.js';
 import { renderSVG } from '../web/shared/svg.js';
 import { generateDeck, generateSlideLayouts, generateLayoutsFor, contrastFloor, LAYOUT_VARIANTS } from '../web/shared/generate.js';
+import { checkDeck } from '../web/js/check.js';
+import { renderPdf } from '../src/lib/render.js';
+import { encodePng } from '../src/lib/images.js';
+import { paths } from '../src/lib/store.js';
 
 /* ---------------------------------------------------------------- fonts */
 
@@ -941,4 +948,269 @@ test('a generated deck draws the same twice, and its graphics survive a round tr
   assert.deepStrictEqual(once, again, 'a deck drawn from its own file differs from the deck in memory');
 });
 
-await run('SlideX: numbering, the slide engine, charts, graphics and the generator');
+/* ------------------------------------------------------------------ check */
+
+test('check finds what will not look right, worst first', () => {
+  const deck = deckOf(4);
+  const slide = deck.slides[0];
+  const layout = layoutOf(deck, slide.layout);
+  const title = layout.elements.find((e) => e.name === 'Title');
+  const content = layout.elements.find((e) => e.name === 'Content');
+
+  // Words that do not fit.
+  slide.overrides[content.id] = { content: { text: 'word '.repeat(600) }, style: { fit: 'none' } };
+  // A character the PDF fonts do not have.
+  slide.overrides[title.id] = { content: { text: 'What we found \u4e2d' } };
+  // A field nobody can fill in.
+  const typo = makeElement('text', 40, 400);
+  typo.name = 'Typo';
+  typo.content = { text: 'Slide {nubmer} of {total}' };
+  // A reference to a slide that is about to be deleted.
+  const doomed = deck.slides[3];
+  const ref = makeElement('reference', 40, 440);
+  ref.content = { target: doomed.id, text: 'see slide {ref}' };
+  // Words that cannot be read on what is behind them.
+  const band = makeElement('shape', 500, 40);
+  band.w = 200; band.h = 60;
+  band.style = { shape: 'rect', fill: 'tint' };
+  const onBand = makeElement('text', 500, 40, 'body');
+  onBand.w = 200; onBand.h = 60;
+  onBand.name = 'Pale words';
+  onBand.style = { ...onBand.style, color: 'tint', size: 12 };
+  onBand.content = { text: 'Nobody can read this' };
+  // An empty chart.
+  const chart = makeElement('chart', 40, 480);
+  chart.name = 'Empty chart';
+  chart.content = { kind: 'bar', data: { labels: [], series: [] } };
+  slide.extras = [typo, ref, band, onBand, chart];
+  deck.slides = removeSlides(deck, [doomed.id]);
+
+  const found = checkDeck(deck);
+  const has = (words) => found.some((x) => x.message.includes(words));
+  assert.ok(has('do not fit'), 'overflow not found');
+  assert.ok(has('\u201c\u4e2d\u201d'), 'an unprintable character not found');
+  assert.ok(has('{nubmer}'), 'a field that is not one was not found');
+  assert.ok(has('points at a slide that has been deleted'), 'a broken reference not found');
+  assert.ok(has('contrast'), 'unreadable words not found');
+  assert.ok(has('no numbers in it'), 'an empty chart not found');
+  // Worst first, and the broken reference is among the worst.
+  assert.strictEqual(found[0].level, 'bad');
+  assert.ok(found.every((x, i) => i === 0 || levelRank(found[i - 1]) <= levelRank(x)), 'not sorted worst first');
+  // Every item can be gone to.
+  for (const item of found) {
+    if (!item.slideId) continue;
+    assert.ok(deck.slides.some((x) => x.id === item.slideId), 'an item points at a slide that is not there');
+  }
+});
+
+const levelRank = (x) => ({ bad: 0, warn: 1, note: 2 }[x.level]);
+
+test('a deck with nothing wrong with it gets nothing said about it', () => {
+  const deck = generateDeck({ seed: 'tidy', title: 'A tidy deck' });
+  deck.options.footer = 'Company';
+  // A generated deck is full of the layout's own placeholder words and empty
+  // picture frames, which is what it is for, and check says so quietly. What
+  // should not be there is anything else at all.
+  const sha = 'b'.repeat(40);
+  for (const slide of deck.slides) {
+    const layout = layoutOf(deck, slide.layout);
+    for (const el of layout.elements) if (el.type === 'image') slide.overrides[el.id] = { content: { asset: sha } };
+  }
+  const assets = { [sha]: { kind: 'png', width: 2400, height: 1400 } };
+  const found = checkDeck(deck, assets).filter((x) => x.level !== 'note');
+  assert.deepStrictEqual(found.map((x) => x.where + ': ' + x.message), []);
+});
+
+test('an empty picture frame and one too small to project are both said', () => {
+  const deck = deckOf(1);
+  const empty = makeElement('image', 40, 200);
+  empty.name = 'Empty frame';
+  const small = makeElement('image', 400, 200);
+  small.name = 'Small picture';
+  small.w = 400; small.h = 300;
+  small.content = { asset: 'c'.repeat(40), focusX: 0.5, focusY: 0.5 };
+  deck.slides[0].extras = [empty, small];
+  const found = checkDeck(deck, { ['c'.repeat(40)]: { kind: 'png', width: 200, height: 150 } });
+  assert.ok(found.some((x) => x.message.includes('has no picture')), 'an empty frame was not noticed');
+  assert.ok(found.some((x) => x.message.includes('look soft on a projector')), 'a picture too small was not noticed');
+});
+
+test('every starter, in every palette, on both shapes, checks clean', () => {
+  // The starters are written by hand rather than generated, so nothing chooses
+  // their colours for them; this is what makes sure a kicker in the accent
+  // still reads when the accent is Meadow's rather than Harbor's.
+  const bad = [];
+  for (const starter of Object.keys(STARTERS)) {
+    for (const palette of Object.keys(PALETTES)) {
+      for (const aspect of ['wide', 'standard']) {
+        const deck = buildStarter(starter, { palette, aspect, title: 'A deck with a reasonably long name' });
+        deck.options.footer = 'Company \u00b7 Confidential';
+        for (const item of checkDeck(deck)) {
+          // A starter's own placeholder words, and its empty picture frames,
+          // are what a starter is; anything else is a fault in it.
+          if (item.level === 'note') continue;
+          if (item.message.includes('has no picture')) continue;
+          bad.push(starter + '/' + palette + '/' + aspect + ' \u00b7 ' + item.message);
+        }
+      }
+    }
+  }
+  assert.deepStrictEqual(bad.slice(0, 6), [], bad.length + ' problems:\n  ' + bad.slice(0, 6).join('\n  '));
+});
+
+test('check notices a slide nothing can name, and a slide off the edge', () => {
+  const deck = deckOf(2);
+  const slide = deck.slides[0];
+  const layout = layoutOf(deck, slide.layout);
+  // Every word taken off it: the title, the bullets, and the footer fields.
+  // slideTitle now finds nothing, which is exactly when the sorter, the agenda
+  // and the go-to box have nothing to show.
+  for (const el of layout.elements) slide.overrides[el.id] = { hidden: true };
+  const chart = makeElement('chart', 40, 200);
+  slide.extras = [chart];
+  const found = checkDeck(deck);
+  assert.ok(found.some((x) => x.message.includes('can be its title')), 'a slide nothing can name was not noticed: ' + found.map((x) => x.message).join(' | '));
+
+  // And a box hanging over the right-hand edge.
+  const off = makeElement('text', deck.size.width - 20, 40, 'body');
+  off.name = 'Hanging off';
+  off.w = 300;
+  deck.slides[1].extras = [off];
+  const again = checkDeck(deck);
+  assert.ok(again.some((x) => x.message.includes('off the edge') || x.message.includes('off the slide')), 'something off the slide was not noticed');
+});
+
+/* -------------------------------------------------------------------- PDF */
+
+test('a PDF has one page per slide, in the deck\u2019s order, with the text of the slides', () => {
+  const deck = buildStarter('plain', { title: 'Printed' });
+  const nums = numbering(deck);
+  const { buffer, slides, pages } = renderPdf('test-deck', deck, { layout: 'slides' });
+  assert.strictEqual(slides, nums.total);
+  assert.strictEqual(pages, nums.total);
+  const text = buffer.toString('latin1');
+  assert.ok(text.startsWith('%PDF-1.4'), 'not a PDF');
+  assert.ok(text.trimEnd().endsWith('%%EOF'), 'the PDF is not finished');
+  assert.strictEqual((text.match(/\/Type \/Page /g) || []).length, nums.total);
+  // Every page is the size the slides are, not a sheet of paper.
+  assert.strictEqual((text.match(new RegExp('/MediaBox \\[0 0 ' + deck.size.width + ' ' + deck.size.height + '\\]', 'g')) || []).length, nums.total);
+  // The pages are listed in the deck's order.
+  const kids = text.match(/\/Kids \[([^\]]+)\]/)[1].trim().split(' 0 R').filter((x) => x.trim()).map((x) => Number(x));
+  assert.strictEqual(kids.length, nums.total);
+  assert.deepStrictEqual(kids, kids.slice().sort((a, b) => a - b), 'the pages are not in order');
+});
+
+test('reordering the deck reorders the PDF, and renumbers every slide in it', () => {
+  const deck = deckOf(5);
+  const words = (buffer) => textOfPdf(buffer);
+  const before = words(renderPdf('test-deck', deck, { layout: 'slides' }).buffer);
+  assert.deepStrictEqual(before.map((p) => p.find((w) => /^Slide [A-E]$/.test(w))), ['Slide A', 'Slide B', 'Slide C', 'Slide D', 'Slide E']);
+  // The number in the corner is the field, and follows the order.
+  assert.deepStrictEqual(before.map((p) => p[p.length - 1]), ['1', '2', '3', '4', '5']);
+
+  deck.slides = moveSlides(deck, [deck.slides[4].id], 0);
+  const after = words(renderPdf('test-deck', deck, { layout: 'slides' }).buffer);
+  assert.deepStrictEqual(after.map((p) => p.find((w) => /^Slide [A-E]$/.test(w))), ['Slide E', 'Slide A', 'Slide B', 'Slide C', 'Slide D']);
+  assert.deepStrictEqual(after.map((p) => p[p.length - 1]), ['1', '2', '3', '4', '5'], 'the numbers in the PDF did not follow the order');
+});
+
+test('a hidden slide is left out of the PDF unless it is asked for', () => {
+  const deck = deckOf(4);
+  deck.slides[1].hidden = true;
+  const shown = renderPdf('test-deck', deck, { layout: 'slides' });
+  assert.strictEqual(shown.pages, 3);
+  const all = renderPdf('test-deck', deck, { layout: 'slides', hidden: true });
+  assert.strictEqual(all.pages, 4);
+  // The numbers in the file are still the deck's: 1, 2, 3, with the hidden one
+  // unnumbered.
+  assert.deepStrictEqual(textOfPdf(shown.buffer).map((p) => p[p.length - 1]), ['1', '2', '3']);
+});
+
+test('notes and handouts put the right number of slides on the right number of pages', () => {
+  const deck = deckOf(7);
+  for (const s of deck.slides) s.notes = 'What to say here.';
+  assert.strictEqual(renderPdf('test-deck', deck, { layout: 'notes' }).pages, 7);
+  assert.strictEqual(renderPdf('test-deck', deck, { layout: 'handout2' }).pages, 4);
+  assert.strictEqual(renderPdf('test-deck', deck, { layout: 'handout3' }).pages, 3);
+  assert.strictEqual(renderPdf('test-deck', deck, { layout: 'handout6' }).pages, 2);
+  // A notes page carries the slide's notes, and a handout does not.
+  assert.ok(textOfPdf(renderPdf('test-deck', deck, { layout: 'notes' }).buffer)[0].includes('What to say here.'));
+  assert.ok(!textOfPdf(renderPdf('test-deck', deck, { layout: 'handout6' }).buffer)[0].includes('What to say here.'));
+  // Every printed layout is on paper, because it is printed.
+  for (const layout of ['notes', 'handout2', 'handout3', 'handout6']) {
+    assert.ok(renderPdf('test-deck', deck, { layout }).buffer.toString('latin1').includes('/MediaBox [0 0 595.28 841.89]'), layout + ' is not on A4');
+  }
+});
+
+test('a deck whose every slide is hidden says so rather than making an empty PDF', () => {
+  const deck = deckOf(2);
+  for (const s of deck.slides) s.hidden = true;
+  assert.throws(() => renderPdf('test-deck', deck, { layout: 'slides' }), /nothing to put in a PDF/);
+});
+
+test('pictures go into the PDF once however many slides use them', () => {
+  const deck = deckOf(3);
+  const sha = 'a'.repeat(40);
+  // Opaque RGBA: a picture with an alpha channel goes in as two objects, the
+  // picture and its mask, which would make counting them mean something else.
+  const rgba = Buffer.alloc(4 * 4 * 4);
+  for (let i = 0; i < rgba.length; i += 4) { rgba[i] = 200; rgba[i + 1] = 120; rgba[i + 2] = 60; rgba[i + 3] = 255; }
+  const png = encodePng(4, 4, rgba);
+  const dir = paths.assets('pdf-asset-test');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, sha + '.png'), png);
+  for (const slide of deck.slides) {
+    const picture = makeElement('image', 40, 200);
+    picture.content = { asset: sha, focusX: 0.5, focusY: 0.5 };
+    slide.extras = [picture];
+  }
+  const { buffer } = renderPdf('pdf-asset-test', deck, { layout: 'slides', assets: { [sha]: { kind: 'png', width: 4, height: 4 } } });
+  const text = buffer.toString('latin1');
+  // One image object for the whole file...
+  assert.strictEqual((text.match(/\/Subtype \/Image/g) || []).length, 1, 'the picture went in more than once');
+  // ...drawn once on each of the three slides. The page streams are deflated,
+  // so this counts inside them rather than in the bytes of the file.
+  const draws = streamsOf(buffer).reduce((n, body) => n + (body.match(/\/Im1 Do/g) || []).length, 0);
+  assert.strictEqual(draws, 3, 'the picture is not drawn on all three slides');
+  fs.rmSync(path.join(paths.deck('pdf-asset-test')), { recursive: true, force: true });
+});
+
+/**
+ * Every content stream in a PDF, uncompressed.
+ *
+ * Found by the /Length in each stream's own dictionary rather than by looking
+ * for the word "endstream", because a stream is compressed bytes and those
+ * bytes can spell anything - including "stream". Reading them as text and
+ * hunting for a marker finds the wrong end of the wrong stream, and quietly
+ * loses a page.
+ */
+function streamsOf(buffer) {
+  const out = [];
+  // The newline before it matters: "endstream\n" ends with "stream\n" too, and
+  // matching that finds a stream where there is none and loses the real one.
+  const marker = Buffer.from('\nstream\n', 'latin1');
+  let at = 0;
+  for (;;) {
+    const start = buffer.indexOf(marker, at);
+    if (start < 0) break;
+    // The /Length belongs to the dictionary just before this stream - the last
+    // one in the window, since the object before it has a /Length of its own.
+    const head = buffer.slice(Math.max(0, start - 500), start).toString('latin1');
+    const lengths = [...head.matchAll(/\/Length (\d+)/g)];
+    at = start + marker.length;
+    if (!lengths.length) continue;
+    const body = buffer.slice(at, at + Number(lengths[lengths.length - 1][1]));
+    at += body.length;
+    try { out.push(zlib.inflateSync(body).toString('latin1')); } catch (e) { /* not deflated: a JPEG, say */ }
+  }
+  return out;
+}
+
+/** The words of each page of a PDF, in order. */
+function textOfPdf(buffer) {
+  return streamsOf(buffer)
+    .map((body) => [...body.matchAll(/<([0-9a-f]+)> Tj/g)].map(([, hex]) => Buffer.from(hex, 'hex').toString('latin1')))
+    .filter((words) => words.length);
+}
+
+await run('SlideX: numbering, the slide engine, charts, graphics, the generator, check and the PDF');

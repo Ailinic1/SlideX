@@ -134,6 +134,39 @@ export function seriesColors(palette, count = 6) {
   return out.map(normalizeHex);
 }
 
+/**
+ * How much contrast a piece of text needs.
+ *
+ * The rule WCAG states: text that is large - 16 points and up, or 14 and up
+ * when it is bold - needs 3 to 1, and everything smaller needs 4.5. On a slide
+ * almost everything is large, which is rather the point of a slide; what this
+ * catches is the label, the caption and the footer, which are not.
+ */
+export function contrastFloor(size, bold) {
+  return size >= 16 || (bold && size >= 14) ? 3 : 4.5;
+}
+
+/**
+ * A colour for words on a fill: the first of `prefer` that reads on it, tried
+ * at 4.5 first and then at whatever this size actually needs, and failing both
+ * whichever of paper and ink reads better. Nothing here is assumed.
+ *
+ * `on` may be several fills, for a colour that has to read on more than one -
+ * a label that appears both on paper and on a tinted band. It is what the
+ * generator uses to choose every colour it puts words in, and what the
+ * starters use for the same reason: an accent that reads on white in one
+ * palette does not in the next.
+ */
+export function readableRole(palette, on, prefer, { size = 17, bold = false } = {}) {
+  const fills = Array.isArray(on) ? on : [on];
+  const floor = contrastFloor(size, bold);
+  const worst = (role) => Math.min(...fills.map((f) => contrast(resolveColor(role, palette), resolveColor(f, palette))));
+  for (const min of [4.5, floor]) {
+    for (const role of prefer) if (worst(role) >= min) return role;
+  }
+  return worst('paper') >= worst('ink') ? 'paper' : 'ink';
+}
+
 /** A palette completed from whatever it was given. */
 export function completePalette(p) {
   const base = PALETTES[DEFAULT_PALETTE];

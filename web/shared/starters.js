@@ -15,6 +15,7 @@
 // deleted.
 
 import { makeDeck, makeLayout, makeElement, makeSlide, ASPECTS, newId } from './model.js';
+import { PALETTES, DEFAULT_PALETTE, completePalette, readableRole } from './color.js';
 
 export const STARTERS = {
   plain: {
@@ -76,11 +77,23 @@ function chrome(t, opts = {}) {
 
 /**
  * The layouts, built for one aspect and one style.
+ *
+ * The palette matters here even though every colour is named by role, because
+ * which role reads on which is a fact about the palette: an accent that reads
+ * on white in Harbor does not in Meadow. So the small coloured things - the
+ * kicker, the section's number - are chosen the way the generator chooses
+ * them, by checked contrast rather than by hope.
+ *
  * @param style 'plain' or 'banded'
  */
-export function buildLayouts(aspect = 'wide', style = 'plain') {
+export function buildLayouts(aspect = 'wide', style = 'plain', paletteKey) {
   const t = grid(aspect);
   const banded = style === 'banded';
+  const pal = completePalette(PALETTES[paletteKey] || PALETTES[DEFAULT_PALETTE]);
+  // On paper and on a tint alike, because a label appears on both.
+  const labelOn = (on, prefer, opts) => readableRole(pal, on, prefer, opts);
+  const kicker = labelOn(['paper', 'tint'], ['accent', 'secondary', 'primary'], { size: 13, bold: true });
+  const onPrimary = labelOn('primary', ['highlight', 'accent', 'tint'], { size: 13, bold: true });
   const out = [];
   const layout = (name, kind, elements, background) => {
     const l = makeLayout(name, kind);
@@ -105,11 +118,12 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
     const ink = banded ? 'paper' : 'primary';
     const under = banded ? 'tint' : 'muted';
     els.push(
-      text({ x: t.m, y: titleY - 42, w: t.span(9), h: 26 }, '{deck}', { size: 13, bold: true, transform: 'upper', tracking: 140, color: banded ? 'highlight' : 'accent', fit: 'shrink' }, 'Kicker', 'label'),
+      text({ x: t.m, y: titleY - 42, w: t.span(9), h: 26 }, '{deck}', { size: 13, bold: true, transform: 'upper', tracking: 140, color: banded ? onPrimary : kicker, fit: 'shrink' }, 'Kicker', 'label'),
       text({ x: t.m, y: titleY, w: t.span(9), h: 112 }, 'The title of this deck', { size: 48, bold: true, color: ink, lineHeight: 1.06, fit: 'shrink' }, 'Title', 'title'),
       text({ x: t.m, y: titleY + 124, w: t.span(8), h: 38 }, 'Who is presenting, and when', { size: 18, color: under, fit: 'shrink' }, 'Subtitle', 'subtitle'),
     );
     if (!banded) els.push(el('shape', { x: t.m, y: titleY - 14, w: t.span(2), h: 4 }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title rule', fixed: true }));
+    // A rule is a shape, not words, so it may be any colour that shows.
     els.push(el('field', { x: t.m, y: t.footY, w: t.span(6), h: t.footH }, { size: 11, color: under, align: 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }));
     layout('Title', 'title', els);
   }
@@ -120,7 +134,16 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
     if (banded) els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Section background', fixed: true }));
     const ink = banded ? 'paper' : 'primary';
     els.push(
-      el('field', { x: t.m, y: t.H / 2 - 96, w: t.span(3), h: 46 }, { size: 38, bold: true, color: banded ? 'highlight' : 'accent', align: 'left', valign: 'bottom', fit: 'shrink' }, { field: 'number' }, { name: 'Section number' }),
+      el('field', { x: t.m, y: t.H / 2 - 96, w: t.span(3), h: 46 }, {
+        size: 38,
+        bold: true,
+        color: banded
+          ? labelOn('primary', ['highlight', 'accent', 'tint'], { size: 38, bold: true })
+          : labelOn('paper', ['accent', 'secondary', 'primary'], { size: 38, bold: true }),
+        align: 'left',
+        valign: 'bottom',
+        fit: 'shrink',
+      }, { field: 'number' }, { name: 'Section number' }),
       text({ x: t.m, y: t.H / 2 - 40, w: t.span(9), h: 76 }, 'Section title', { size: 40, bold: true, color: ink, lineHeight: 1.1, fit: 'shrink' }, 'Section title', 'title'),
       text({ x: t.m, y: t.H / 2 + 44, w: t.span(7), h: 52 }, 'A line about what this part covers', { size: 17, color: banded ? 'tint' : 'muted', fit: 'shrink' }, 'Section note', 'subtitle'),
     );
@@ -157,7 +180,7 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
   /* --------------------------------------------------------- big number */
   {
     layout('Big number', 'bigNumber', [
-      text({ x: t.m, y: t.titleY, w: t.span(10), h: 40 }, 'What this number is', { size: 13, bold: true, transform: 'upper', tracking: 140, color: 'accent', valign: 'middle' }, 'Label', 'label'),
+      text({ x: t.m, y: t.titleY, w: t.span(10), h: 40 }, 'What this number is', { size: 13, bold: true, transform: 'upper', tracking: 140, color: kicker, valign: 'middle' }, 'Label', 'label'),
       el('stat', { x: t.m, y: t.H / 2 - 90, w: t.span(8), h: 180 }, { family: 'sans', color: 'primary', labelColor: 'muted', align: 'left', iconSide: 'none' }, { value: '94%', label: 'of customers renewed this year', icon: 'target' }, { name: 'Big number' }),
       text({ x: t.m, y: t.H - 118, w: t.span(8), h: 40 }, 'Where the number came from', { size: 13, italic: true, color: 'muted' }, 'Source', 'caption'),
       ...chrome(t),
@@ -169,7 +192,7 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
     const els = [];
     if (banded) els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'tint' }, {}, { name: 'Quote background', fixed: true }));
     els.push(
-      el('icon', { x: t.m, y: t.H / 2 - 110, w: 44, h: 44 }, { color: 'accent', badge: 'none' }, { icon: 'quote' }, { name: 'Quote mark' }),
+      el('icon', { x: t.m, y: t.H / 2 - 110, w: 44, h: 44 }, { color: labelOn(banded ? 'tint' : 'paper', ['accent', 'secondary', 'primary'], { size: 44 }), badge: 'none' }, { icon: 'quote' }, { name: 'Quote mark' }),
       text({ x: t.m, y: t.H / 2 - 56, w: t.span(9), h: 128 }, '> A line worth putting on a slide of its own.', { size: 30, italic: true, family: 'serif', color: 'primary', lineHeight: 1.28, valign: 'middle', fit: 'shrink' }, 'Quote', 'quote'),
       text({ x: t.m, y: t.H / 2 + 86, w: t.span(7), h: 32 }, 'Who said it, and what they do', { size: 14, color: 'muted' }, 'Attribution', 'caption'),
       ...chrome(t),
@@ -208,7 +231,7 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
       panel(right, 'Right panel'),
       text({ x: t.m + 20, y: t.bodyY + 20, w: colW - 40, h: 30 }, 'This', { size: 19, bold: true, color: 'primary' }, 'Left heading', 'heading'),
       text({ x: t.m + 20, y: t.bodyY + 58, w: colW - 40, h: t.bodyH - 78 }, '- What it does well\n- What it costs', { size: 17 }, 'Left', 'bullets'),
-      text({ x: right + 20, y: t.bodyY + 20, w: colW - 40, h: 30 }, 'That', { size: 19, bold: true, color: 'accent' }, 'Right heading', 'heading'),
+      text({ x: right + 20, y: t.bodyY + 20, w: colW - 40, h: 30 }, 'That', { size: 19, bold: true, color: labelOn('tint', ['accent', 'secondary', 'primary'], { size: 19, bold: true }) }, 'Right heading', 'heading'),
       text({ x: right + 20, y: t.bodyY + 58, w: colW - 40, h: t.bodyH - 78 }, '- What it does well\n- What it costs', { size: 17 }, 'Right', 'bullets'),
       ...chrome(t),
     ]);
@@ -247,7 +270,7 @@ export function buildLayouts(aspect = 'wide', style = 'plain') {
 export function buildStarter(id = 'plain', opts = {}) {
   const which = STARTERS[id] ? id : 'plain';
   const aspect = ASPECTS[opts.aspect] ? opts.aspect : 'wide';
-  const layouts = which === 'blank' ? [makeLayout('Blank', 'blank')] : buildLayouts(aspect, which);
+  const layouts = which === 'blank' ? [makeLayout('Blank', 'blank')] : buildLayouts(aspect, which, opts.palette);
   const deck = makeDeck({ ...opts, aspect, layouts });
   deck.title = opts.title || deck.title;
   if (which === 'blank') {

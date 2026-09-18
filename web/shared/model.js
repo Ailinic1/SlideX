@@ -22,7 +22,7 @@
 import { PALETTES, DEFAULT_PALETTE, completePalette } from './color.js';
 import { sampleData } from './charts.js';
 import { newSeed } from './patterns.js';
-import { numbering, resolveReference, slideTitle, sectionOf, sectionsOf } from './numbering.js';
+import { numbering, resolveReference, slideTitle, sectionOf, sectionsOf, isTitleName } from './numbering.js';
 
 /**
  * The two shapes a slide comes in. Both are in points, as a PDF measures them,
@@ -159,7 +159,9 @@ export function makeElement(type, x = 60, y = 60, preset) {
       break;
     case 'reference':
       Object.assign(el, { w: 220, h: 24, name: 'Reference' });
-      el.style = { ...TEXT_STYLE, size: 13, color: 'accent', italic: true, fit: 'shrink' };
+      // Primary rather than accent: every palette's primary is dark enough to
+      // read on paper, and an accent is not.
+      el.style = { ...TEXT_STYLE, size: 13, color: 'primary', italic: true, fit: 'shrink' };
       // The target is a slide's id, never its number: that is the whole point.
       el.content = { target: null, text: 'see slide {ref}' };
       break;
@@ -623,4 +625,4 @@ export function rebaseSlides(oldDeck, newDeck, slides) {
   return { slides: out, layouts: newDeck.layouts, carried, dropped };
 }
 
-export { numbering, resolveReference, slideTitle, sectionOf, sectionsOf };
+export { numbering, resolveReference, slideTitle, sectionOf, sectionsOf, isTitleName };

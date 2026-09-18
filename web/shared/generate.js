@@ -34,12 +34,14 @@
 // No AI: a seeded random number generator and rules.
 
 import { makeElement, makeDeck, makeLayout, makeSlide, ASPECTS, newId, LAYOUT_KINDS } from './model.js';
-import { PALETTES, completePalette, resolveColor, contrast } from './color.js';
+import { PALETTES, completePalette, resolveColor, contrast, contrastFloor, readableRole } from './color.js';
 import { sampleData } from './charts.js';
 import { rng, newSeed } from './patterns.js';
 import { layoutText } from './text.js';
 
 export const GENERATOR_VERSION = 1;
+
+export { contrastFloor };
 
 const half = (v) => Math.round(v * 2) / 2;
 
@@ -74,35 +76,7 @@ function readable(pal, fill, prefer, min = 4.5) {
   return contrast(resolveColor('paper', pal), bg) >= contrast(resolveColor('ink', pal), bg) ? 'paper' : 'ink';
 }
 
-/**
- * How much contrast a piece of text needs.
- *
- * The same rule WCAG uses: text that is large - 16 points and up, or 14 and up
- * when it is bold - needs 3 to 1, and everything smaller needs 4.5. On a slide
- * almost everything is large, which is the point of a slide; what this catches
- * is the label, the caption and the footer, which are not.
- */
-export function contrastFloor(size, bold) {
-  return size >= 16 || (bold && size >= 14) ? 3 : 4.5;
-}
-
-/**
- * A colour for words on a fill: the first of `prefer` that reads on it, tried
- * at 4.5 first and then at whatever this size actually needs, and failing both
- * whichever of paper and ink reads better. Nothing here is assumed.
- *
- * `on` may be several fills, for a colour that has to read on more than one -
- * a label that appears both on paper and on a tinted band.
- */
-function ink(t, on, prefer, { size = t.fs.body, bold = false } = {}) {
-  const fills = Array.isArray(on) ? on : [on];
-  const floor = contrastFloor(size, bold);
-  const worst = (role) => Math.min(...fills.map((f) => contrast(resolveColor(role, t.pal), resolveColor(f, t.pal))));
-  for (const min of [4.5, floor]) {
-    for (const role of prefer) if (worst(role) >= min) return role;
-  }
-  return worst('paper') >= worst('ink') ? 'paper' : 'ink';
-}
+const ink = (t, on, prefer, opts) => readableRole(t.pal, on, prefer, opts);
 
 /* ----------------------------------------------------------------- theme */
 

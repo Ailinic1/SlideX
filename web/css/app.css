@@ -1263,3 +1263,26 @@ body.presenter { background: var(--bg); }
 .pv-notes p.dim { color: var(--text-faint); font-style: italic; }
 .rib-keys { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 11.5px; color: var(--text-dim); padding: 0 4px; }
 .rib-keys kbd { font-size: 10px; padding: 0 4px; }
+
+/* ---------------------------------------------------------- check panel */
+
+.check-list { display: flex; flex-direction: column; gap: 3px; }
+.check-item {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 10px;
+  border: 0; border-left: 3px solid transparent; border-radius: var(--radius);
+  background: none; cursor: pointer; color: var(--text); text-align: left;
+}
+.check-item:hover { background: var(--bg-hover); }
+.check-item .ico { display: inline-flex; margin-top: 1px; }
+.check-item .ico.go { margin-left: auto; color: var(--text-faint); opacity: 0; }
+.check-item:hover .ico.go { opacity: 1; }
+.check-item.bad { border-left-color: var(--bad); }
+.check-item.bad > .ico { color: var(--bad); }
+.check-item.warn { border-left-color: var(--warn); }
+.check-item.warn > .ico { color: var(--warn); }
+.check-item.note { border-left-color: var(--border-strong); }
+.check-item.note > .ico { color: var(--text-faint); }
+.check-words { min-width: 0; }
+.check-message { font-size: 13px; line-height: 1.5; }
+.check-where { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.empty-state .ico.ok { color: var(--ok); }

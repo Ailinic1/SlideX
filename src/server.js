@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 
 import * as S from './lib/store.js';
 import * as repo from './lib/repo.js';
+import { renderPdf, pdfFileName, PDF_LAYOUTS } from './lib/render.js';
 import { UserError, notFound } from './lib/errors.js';
 import { NAME, VERSION } from './lib/version.js';
 import { STARTERS } from '../web/shared/starters.js';
@@ -159,6 +160,34 @@ route('GET', /^\/api\/decks\/([^/]+)\/assets\/([a-f0-9]{40})$/, (req, res, [id, 
   // A picture's name is its contents, so it can be cached for ever.
   send(res, 200, fs.readFileSync(file), { 'Content-Type': MIME['.' + meta.kind], 'Cache-Control': 'private, max-age=31536000, immutable' });
 });
+
+/**
+ * A PDF of a deck: from the deck as it is saved, or from the one posted, so a
+ * PDF can be made of work that has not been saved yet.
+ */
+async function pdfRoute(req, res, id, url) {
+  const { record, working, assets } = repo.getDeck(id);
+  let deck = working.deck;
+  const body = req.method === 'POST' ? await readJson(req) : {};
+  if (body.deck && body.deck.slides) deck = body.deck;
+  const layout = body.layout || url.searchParams.get('layout') || 'slides';
+  if (!PDF_LAYOUTS[layout]) throw new UserError('There is no PDF layout called that.');
+  const result = renderPdf(id, { ...deck, title: deck.title || record.name }, {
+    layout,
+    paper: body.paper || url.searchParams.get('paper') || 'a4',
+    hidden: body.hidden === true || url.searchParams.get('hidden') === '1',
+    assets,
+    author: S.getConfig().user.name,
+  });
+  const name = pdfFileName({ ...deck, title: deck.title || record.name }, layout);
+  const out = S.ensureDir(S.paths.out(id));
+  S.writeFileAtomic(path.join(out, name), result.buffer);
+  attachment(res, result.buffer, name, 'application/pdf');
+  if (result.warnings.length) console.warn('[SlideX] PDF warnings:', result.warnings.join(' | '));
+}
+route('GET', /^\/api\/decks\/([^/]+)\/pdf$/, (req, res, [id], url) => pdfRoute(req, res, id, url));
+route('POST', /^\/api\/decks\/([^/]+)\/pdf$/, (req, res, [id], url) => pdfRoute(req, res, id, url));
+route('GET', /^\/api\/pdf-layouts$/, (req, res) => json(res, Object.entries(PDF_LAYOUTS).map(([id, l]) => ({ id, ...l }))));
 
 route('POST', /^\/api\/decks\/([^/]+)\/push$/, async (req, res, [id]) => {
   const body = await readJson(req);

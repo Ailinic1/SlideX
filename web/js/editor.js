@@ -21,6 +21,8 @@ import { paintInspector } from './inspector.js';
 import { openCommands, provideCommands } from './commands.js';
 import { openSlideLayouts, restyleDeck } from './generated.js';
 import { startPresenting } from './present.js';
+import { openCheck } from './check.js';
+import { exportPdf, exportPng } from './export.js';
 import {
   resolveSlide, resolveLayout, numbering, sectionsOf, layoutOf, makeSlide, makeElement,
   moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone, rebaseSlides,
@@ -971,6 +973,7 @@ function installKeyboard() {
       if (k === 'v') { e.preventDefault(); return pasteClipboard(); }
       if (k === 'd') { e.preventDefault(); return ed.picked.length ? (copySelection(false), pasteClipboard()) : duplicateCurrent(); }
       if (k === 'm') { e.preventDefault(); return addSlide(); }
+      if (k === 'p') { e.preventDefault(); return exportPdf({ deck: deck(), deckId: app.open.record.id }); }
       if (k === 'a') { e.preventDefault(); ed.picked = shownElements().map((x) => x.id); ed.canvas.select(ed.picked); return paintInspectorNow(); }
       if (k === ']') { e.preventDefault(); return reorderElements('front'); }
       if (k === '[') { e.preventDefault(); return reorderElements('back'); }
@@ -1113,7 +1116,16 @@ export function editorRibbon() {
         ribBtn('Write notes', 'notes', () => { ed.picked = []; paintInspectorNow(); document.querySelector('.inspector textarea') && document.querySelector('.inspector textarea').focus(); }, { small: true }),
       ]),
     ],
-    share: [ribGroup('Share', [ribBtn('Push', 'upload', () => {}, { disabled: true })])],
+    share: [
+      ribGroup('Before you send it', [
+        ribBtn('Check', 'checklist', runCheck, { title: 'Everything that will not look right, worst first' }),
+      ]),
+      ribGroup('Export', [
+        ribBtn('PDF', 'pdf', () => exportPdf({ deck: d, deckId: app.open.record.id }), { title: 'Ctrl+P' }),
+        ribBtn('PNG', 'image', () => exportPng({ deck: d, deckId: app.open.record.id, assets: app.open.assets, slideId: ed.current }), { small: true }),
+        ribBtn('Open the folder', 'folder', () => api.reveal({ deck: app.open.record.id }).catch(() => {}), { small: true }),
+      ]),
+    ],
   };
 }
 
@@ -1138,6 +1150,22 @@ export function present(fromId, opts = {}) {
       // You come back to the slide you finished on, which is nearly always the
       // one you want to fix.
       if (landedOn) goToSlide(landedOn);
+    },
+  });
+}
+
+/** The check panel, and going to whatever it points at. */
+function runCheck() {
+  openCheck({
+    deck: deck(),
+    assets: app.open.assets,
+    onGo: (item) => {
+      if (item.slideId) goToSlide(item.slideId);
+      if (item.elementId) {
+        ed.picked = [item.elementId];
+        if (ed.canvas) { ed.canvas.select(ed.picked, true); ed.canvas.scrollToElement(item.elementId); }
+        paintInspectorNow();
+      }
     },
   });
 }
@@ -1381,6 +1409,9 @@ provideCommands(() => {
     cmd('Present from the start', 'play', () => present(d.slides[0] && d.slides[0].id), 'F5'),
     cmd('Present from this slide', 'present', () => present(ed.current), 'Shift+F5'),
     cmd('Open the presenter view', 'notes', () => present(ed.current, { presenter: true })),
+    cmd('Check the deck', 'checklist', runCheck),
+    cmd('Export a PDF', 'pdf', () => exportPdf({ deck: d, deckId: app.open.record.id }), 'Ctrl+P'),
+    cmd('Export the slides as PNG', 'image', () => exportPng({ deck: d, deckId: app.open.record.id, assets: app.open.assets, slideId: ed.current })),
     cmd('Change the slide shape', 'columns', chooseAspect),
     cmd('Deck settings', 'gear', deckSettings),
     cmd('Shuffle the generated graphics', 'shuffle', shuffleAll),

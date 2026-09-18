@@ -394,10 +394,7 @@ export function markDirty() {
   setSaving('dirty');
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveNow(), 900);
-  const title = document.querySelector('.doc-title');
-  if (title && state.open) {
-    clear(title).append(h('strong', state.open.record.name), ' · ' + slideCount());
-  }
+  refreshChrome();
 }
 
 export async function saveNow(force) {

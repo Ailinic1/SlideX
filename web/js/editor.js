@@ -20,6 +20,7 @@ import { createCanvas } from './canvas.js';
 import { paintInspector } from './inspector.js';
 import { openCommands, provideCommands } from './commands.js';
 import { openSlideLayouts, restyleDeck } from './generated.js';
+import { startPresenting } from './present.js';
 import {
   resolveSlide, resolveLayout, numbering, sectionsOf, layoutOf, makeSlide, makeElement,
   moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone, rebaseSlides,
@@ -979,6 +980,7 @@ function installKeyboard() {
       return;
     }
 
+    if (e.key === 'F5') { e.preventDefault(); return present(e.shiftKey ? ed.current : (deck().slides[0] || {}).id); }
     const step = e.shiftKey ? 10 : 1;
     switch (e.key) {
       case 'Delete': case 'Backspace': e.preventDefault(); return deleteSelection();
@@ -1094,12 +1096,51 @@ export function editorRibbon() {
         ribBtn('Shuffle all', 'shuffle', shuffleAll, { small: true, title: 'A new seed for every generated graphic on this slide' }),
       ]),
     ],
-    present: [ribGroup('Present', [ribBtn('From the start', 'play', () => {}, { disabled: true })])],
+    present: [
+      ribGroup('Present', [
+        ribBtn('From the start', 'play', () => present(d.slides[0] && d.slides[0].id), { title: 'F5' }),
+        ribBtn('From here', 'present', () => present(ed.current), { small: true, title: 'Shift+F5' }),
+        ribBtn('Presenter view', 'notes', () => present(ed.current, { presenter: true }), { small: true }),
+      ]),
+      ribGroup('While presenting', [
+        h('div.rib-keys', [
+          h('div', [h('kbd', '\u2192'), ' next \u00b7 ', h('kbd', '\u2190'), ' back']),
+          h('div', [h('kbd', 'B'), ' / ', h('kbd', 'W'), ' blank the screen \u00b7 ', h('kbd', 'L'), ' laser']),
+          h('div', ['a number and ', h('kbd', 'Enter'), ' goes to that slide \u00b7 ', h('kbd', 'Esc'), ' stops']),
+        ]),
+      ]),
+      ribGroup('Notes', [
+        ribBtn('Write notes', 'notes', () => { ed.picked = []; paintInspectorNow(); document.querySelector('.inspector textarea') && document.querySelector('.inspector textarea').focus(); }, { small: true }),
+      ]),
+    ],
     share: [ribGroup('Share', [ribBtn('Push', 'upload', () => {}, { disabled: true })])],
   };
 }
 
 /* ------------------------------------------------------------ the design */
+
+/**
+ * Start the talk.
+ *
+ * Hidden slides are skipped, so what the room sees is the deck as its numbers
+ * say it is.
+ */
+export function present(fromId, opts = {}) {
+  const d = deck();
+  startPresenting({
+    deck: d,
+    deckId: app.open.record.id,
+    assets: app.open.assets,
+    assetUrl: (sha) => api.assetUrl(app.open.record.id, sha),
+    from: fromId || ed.current,
+    presenter: opts.presenter !== false,
+    onEnd: (landedOn) => {
+      // You come back to the slide you finished on, which is nearly always the
+      // one you want to fix.
+      if (landedOn) goToSlide(landedOn);
+    },
+  });
+}
 
 function chooseLayout() {
   const d = deck();
@@ -1337,6 +1378,9 @@ provideCommands(() => {
     cmd('Change the fonts', 'text', chooseFonts),
     cmd('Generate a layout for this slide', 'dice', generateForSlide),
     cmd('Generate a new style for the deck', 'shuffle', generateStyle),
+    cmd('Present from the start', 'play', () => present(d.slides[0] && d.slides[0].id), 'F5'),
+    cmd('Present from this slide', 'present', () => present(ed.current), 'Shift+F5'),
+    cmd('Open the presenter view', 'notes', () => present(ed.current, { presenter: true })),
     cmd('Change the slide shape', 'columns', chooseAspect),
     cmd('Deck settings', 'gear', deckSettings),
     cmd('Shuffle the generated graphics', 'shuffle', shuffleAll),

@@ -656,6 +656,49 @@ test('what has nowhere to go is counted before anything moves', () => {
   assert.strictEqual(dropped, 1);
 });
 
+/* -------------------------------------------------------------- present */
+//
+// Present mode needs a browser, so what is checked here is the part that
+// decides what happens: which slides are shown, and what a typed number means.
+// The rest is driven for real by the UI tests.
+
+test('presenting shows the slides that are numbered, in order, and skips the hidden', () => {
+  const deck = deckOf(6);
+  deck.slides[1].hidden = true;
+  deck.slides[4].hidden = true;
+  const running = numbering(deck).visible;
+  assert.deepStrictEqual(running.map((s) => slideTitle(deck, s)), ['Slide A', 'Slide C', 'Slide D', 'Slide F']);
+  // What the room sees is 1, 2, 3, 4 with no gaps.
+  assert.deepStrictEqual(running.map((s) => numbering(deck).numberOf(s.id)), [1, 2, 3, 4]);
+});
+
+test('typing a number during a talk means the slide with that number now', () => {
+  const deck = deckOf(6);
+  const nums = () => numbering(deck);
+  assert.strictEqual(slideTitle(deck, nums().at(4)), 'Slide D');
+  // Move a slide mid-talk, as somebody would from the sorter in another window.
+  deck.slides = moveSlides(deck, [deck.slides[5].id], 0);
+  assert.strictEqual(slideTitle(deck, nums().at(4)), 'Slide C');
+  assert.strictEqual(nums().at(7), null, 'there is no slide 7 in a deck of six');
+  assert.strictEqual(nums().at(0), null);
+});
+
+test('a hidden slide has no number to type, so it cannot be jumped to', () => {
+  const deck = deckOf(4);
+  deck.slides[2].hidden = true;
+  const nums = numbering(deck);
+  // 3 is now the fourth slide; the hidden one is not reachable by number at all.
+  assert.strictEqual(slideTitle(deck, nums.at(3)), 'Slide D');
+  assert.ok(!nums.visible.some((s) => s.id === deck.slides[2].id));
+});
+
+test('a deck in which every slide is hidden has nothing to present', () => {
+  const deck = deckOf(3);
+  for (const s of deck.slides) s.hidden = true;
+  assert.strictEqual(numbering(deck).total, 0);
+  assert.strictEqual(numbering(deck).visible.length, 0);
+});
+
 /* ------------------------------------------------------------- generator */
 
 /**

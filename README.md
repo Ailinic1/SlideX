@@ -98,18 +98,36 @@ set of layouts - a title slide, a section divider, title and content, two
 column, a big number, a quote, a full-bleed picture, a chart, a comparison, an
 agenda and a closing slide - and **Generate another** (or <kbd>G</kbd>) draws a
 different one, as many times as you like; **Previous** goes back to one you
-passed. Leave the colours to each style, or hold a palette while you try them.
+passed. Leave the colours to each style, or hold a palette while you try them -
+and light, dark, or whichever the seed feels like.
 
 There is no AI in it. Each style is built by rules from a seed: a twelve-column
 grid, a fixed scale of type sizes, text boxes measured for their words, and
 designed arrangements composed so nothing touches the margins. The seed picks
-the character - the palette, the typefaces, which kind of title slide, which
-arrangement each content slide uses, tinted or outlined panels, square or
-rounded corners, how icons are badged, which generated graphic decorates it.
-The same seed always makes the same deck, down to the last dot of the last
-graphic, and the tests generate a hundred and twenty of them on both slide
-shapes and check that nothing overflows, leaves the slide, collides, or is hard
-to read against what is behind it.
+the character - the palette, whether the deck is light or dark, the typefaces,
+how loudly it speaks, whether the big slides are set from the left or down the
+middle, which kind of title slide, which arrangement each content slide uses,
+which colour a divider gives a whole slide to, tinted or outlined panels,
+square or rounded corners, how icons are badged, which generated graphic
+decorates it, and which slides the deck opens with. The same seed always makes
+the same deck, down to the last dot of the last graphic, and the tests generate
+two hundred of them - light and dark, on both slide shapes - and check that
+nothing overflows, leaves the slide, collides, or is hard to read against what
+is behind it.
+
+**Dark decks** are not light decks with the colours inverted. A dark palette is
+the same palette - the same name, the same nine roles - on a deep ground that
+keeps its hue, so a dark Meadow is not a dark Cardinal; the text becomes
+near-white, the tints and lines become lighter than what they sit on rather
+than darker, and each brand colour is lifted until it carries small text on the
+ground. Because nothing changes but the nine roles, every chart, graphic and
+element follows without being touched. Roughly three styles in ten come back
+dark; **Dark** on the generate screen asks for them and nothing else. A deck
+that already exists can be turned dark, and back, from **Colours**.
+
+A light deck gets dark slides too: the colour a deck gives a whole slide to -
+its title, its dividers, its closing - is sometimes the ink rather than the
+primary, which is what makes a light deck's section slides black.
 
 A deck that already exists can try layouts too: **Generate a layout for this
 slide** shows six at a time in the deck's own colours, with **Six more** after
@@ -144,8 +162,9 @@ inspector for whatever is selected.
   inside a text box indents a bullet rather than leaving the box.
 - **Colours are roles** - primary, secondary, accent, highlight, text, quiet
   text, lines, tint, paper - so choosing another palette recolours every slide,
-  chart and graphic at once. A colour of its own is there for the logo that has
-  to be exactly itself.
+  chart and graphic at once, and the light/dark switch beside them recolours
+  the deck without touching a single element. A colour of its own is there for
+  the logo that has to be exactly itself.
 - **Everything is undoable**, without a limit, and everything saves itself as
   you work.
 

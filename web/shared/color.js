@@ -110,11 +110,18 @@ export function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** Whichever of ink and paper reads better on a fill. */
+/**
+ * Whichever colour reads best on a fill.
+ *
+ * White and the palette's ink first, which between them answer it on any light
+ * palette. Black and the palette's paper are there for a dark one, where the
+ * ink is near-white and would fail on anything pale.
+ */
 export function textOn(fill, palette) {
-  const dark = resolveColor('ink', palette) || '#000000';
-  const light = '#ffffff';
-  return contrast(fill, light) >= contrast(fill, dark) ? light : dark;
+  const tries = ['#ffffff', resolveColor('ink', palette) || '#000000', '#000000', resolveColor('paper', palette) || '#ffffff'];
+  let best = tries[0];
+  for (const c of tries) if (contrast(fill, c) > contrast(fill, best)) best = c;
+  return best;
 }
 
 /**
@@ -173,4 +180,59 @@ export function completePalette(p) {
   const out = { name: (p && p.name) || 'Custom' };
   for (const role of ROLES) out[role] = p && isHex(p[role]) ? normalizeHex(p[role]) : base[role];
   return out;
+}
+
+/**
+ * The same palette, on a dark slide.
+ *
+ * A dark deck is not a light deck with its colours inverted. The paper becomes
+ * a deep ground that keeps a little of the palette's own hue, so a dark Meadow
+ * is not a dark Cardinal; the ink becomes near-white; the tint and the rule
+ * become *lighter* than what they sit on rather than darker; and every brand
+ * colour is lifted until it carries small text on that ground, because that is
+ * the hardest thing any of them is asked to do.
+ *
+ * The nine roles are the same nine roles and the palette keeps its name, so a
+ * chart, a generated graphic or an element that says "accent" needs to know
+ * nothing about any of this, and a deck can be turned dark and back again.
+ */
+export function darkPalette(p) {
+  const base = completePalette(p);
+  const paper = mix(mix(base.ink, base.primary, 0.45), '#000000', 0.42);
+  const ink = mix('#ffffff', base.tint, 0.4);
+  // Brightened rather than whitened: the three channels are scaled together,
+  // which keeps the hue and most of the colour, where fading towards white
+  // would give every palette the same set of pastels. A colour already as
+  // bright as it can be - a near-grey, say - has nothing left to scale, and
+  // fades the rest of the way because there is no other way left.
+  const lift = (hex, min) => {
+    let c = normalizeHex(hex);
+    for (let i = 0; i < 40 && contrast(c, paper) < min; i++) {
+      const next = rgbToHex(hexToRgb(c).map((v) => v * 1.12 + 2));
+      if (next === c) break;
+      c = next;
+    }
+    for (let i = 0; i < 20 && contrast(c, paper) < min; i++) c = mix(c, '#ffffff', 0.08);
+    return c;
+  };
+  return {
+    name: base.name,
+    primary: lift(base.primary, 4.5),
+    secondary: lift(base.secondary, 4.5),
+    accent: lift(base.accent, 4.5),
+    highlight: lift(base.highlight, 4.5),
+    ink,
+    muted: lift(mix(ink, paper, 0.42), 4.5),
+    rule: mix(paper, ink, 0.26),
+    tint: mix(paper, ink, 0.1),
+    paper,
+  };
+}
+
+/** Whether a palette's paper is dark, which is what makes a deck a dark one. */
+export const isDarkPalette = (palette) => luminance(resolveColor('paper', palette) || '#ffffff') < 0.2;
+
+/** A palette in the mode a deck is in. */
+export function paletteIn(p, mode) {
+  return mode === 'dark' ? darkPalette(p) : completePalette(p);
 }

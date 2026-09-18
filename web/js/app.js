@@ -337,7 +337,7 @@ function newDeck() {
 function generateNewDeck() {
   openDeckStyles({
     title: 'Untitled deck',
-    onUse: async (generated, seed, palette, aspect) => {
+    onUse: async (generated, seed, palette, aspect, mode) => {
       const name = await promptDialog({
         title: 'What is the deck called?',
         label: 'Name',
@@ -347,7 +347,7 @@ function generateNewDeck() {
       });
       if (name == null) return;
       try {
-        const made = await api.createDeck({ name: name.trim() || 'Untitled deck', starter: 'generated', seed, aspect, palette: palette || undefined });
+        const made = await api.createDeck({ name: name.trim() || 'Untitled deck', starter: 'generated', seed, aspect, palette: palette || undefined, mode: mode || undefined });
         await openDeck(made.record.id);
       } catch (e) {
         toast('Could not make the deck', e.message, 'bad');

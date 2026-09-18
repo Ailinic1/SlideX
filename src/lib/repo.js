@@ -121,7 +121,7 @@ export function createDeck(opts = {}) {
   // A generated style is made again here from its seed, so the deck on the
   // server is the one that was on screen, element for element.
   const deck = generated
-    ? generateDeck({ seed: opts.seed, aspect: opts.aspect, palette: opts.palette || undefined, title: name })
+    ? generateDeck({ seed: opts.seed, aspect: opts.aspect, palette: opts.palette || undefined, mode: opts.mode || undefined, title: name })
     : buildStarter(opts.starter || 'plain', { palette: opts.palette, aspect: opts.aspect, title: name });
   deck.title = name;
   const now = S.nowIso();

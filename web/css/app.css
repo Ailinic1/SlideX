@@ -667,6 +667,9 @@ textarea.input.content {
 .seg button:last-child { border-right: 0; }
 .seg button:hover { background: var(--bg-hover); color: var(--text); }
 .seg button.on { background: var(--bg-active); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+/* The same control given a row of its own: light and dark above the palettes. */
+.seg.wide { display: flex; width: 100%; margin-bottom: 10px; }
+.seg.wide button { flex: 1; padding: 6px; font-size: 13px; }
 .toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; margin-bottom: 7px; }
 .toggle .why { display: block; font-size: 11px; color: var(--text-faint); }
 .toggle input { margin-top: 1px; align-self: flex-start; }

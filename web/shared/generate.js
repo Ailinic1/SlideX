@@ -34,7 +34,7 @@
 // No AI: a seeded random number generator and rules.
 
 import { makeElement, makeDeck, makeLayout, makeSlide, ASPECTS, newId, LAYOUT_KINDS } from './model.js';
-import { PALETTES, completePalette, resolveColor, contrast, contrastFloor, readableRole } from './color.js';
+import { PALETTES, paletteIn, resolveColor, contrast, contrastFloor, readableRole } from './color.js';
 import { sampleData } from './charts.js';
 import { rng, newSeed, PATTERN_KINDS } from './patterns.js';
 import { layoutText } from './text.js';
@@ -87,23 +87,51 @@ function makeTheme(random, opts) {
   // the width changes. k is here for the day a third shape is not.
   const k = H / 540;
   const paletteKey = opts.palette && PALETTES[opts.palette] ? opts.palette : random.pick(Object.keys(PALETTES));
-  const pal = completePalette(PALETTES[paletteKey]);
+  // Three decks in ten are dark ones. The palette is the same palette either
+  // way - the same name, the same nine roles - so holding a palette and asking
+  // for another style still gives light ones and dark ones in that palette.
+  const mode = opts.mode === 'dark' || opts.mode === 'light' ? opts.mode : weighted(random, [['light', 7], ['dark', 3]]);
+  const pal = paletteIn(PALETTES[paletteKey], mode);
   const [head, body] = weighted(random, [[['sans', 'sans'], 5], [['sans', 'serif'], 2], [['serif', 'sans'], 2]]);
   const m = half(random.pick([48, 56, 56, 64]) * k);
   const g = half(random.pick([14, 16, 20]) * k);
   const cw = (W - 2 * m - 11 * g) / 12;
+  // A colour a whole slide is given has to carry a caption as well as a title,
+  // so a role only gets to be the cover if the better of paper and ink reads on
+  // it at the ratio small text needs. Ink always can, in either mode, which is
+  // why it is what is left if nothing else qualifies.
+  const carries = (role) => Math.max(
+    contrast(resolveColor(role, pal), resolveColor('paper', pal)),
+    contrast(resolveColor(role, pal), resolveColor('ink', pal)),
+  ) >= 4.5;
+  // A dark deck mostly gives its big slides the quiet tint, because a brand
+  // colour lifted until it reads on a deep ground is a light colour, and a
+  // light title slide in a dark deck is the wrong way round more often than it
+  // is right. A light deck sometimes gives them the ink instead, which is what
+  // makes a light deck's section dividers black.
+  const covers = (mode === 'dark'
+    ? [['tint', 6], ['primary', 2], ['secondary', 2]]
+    : [['primary', 5], ['ink', 3], ['secondary', 2]]).filter(([role]) => carries(role));
   const t = {
-    random, aspect, W, H, k, m, g, cw, pal, paletteKey, head, body,
+    random, aspect, W, H, k, m, g, cw, pal, paletteKey, head, body, mode,
     gap: half(random.pick([20, 26, 32]) * k),
     radius: weighted(random, [[0, 4], [6, 3], [14, 2]]),
     panel: weighted(random, [['tint', 5], ['outline', 3], ['plain', 2]]),
     badge: weighted(random, [['circle', 4], ['rounded', 3], ['none', 3]]),
     badgeColor: random.pick(['primary', 'secondary', 'accent']),
     headingRule: weighted(random, [['none', 4], ['rule', 3], ['band', 2], ['kicker', 2]]),
-    titleStyle: weighted(random, [['band', 4], ['sidebar', 3], ['rule', 3], ['card', 2], ['graphic', 2]]),
-    sectionStyle: weighted(random, [['full', 4], ['half', 3], ['number', 3]]),
+    titleStyle: weighted(random, [['band', 4], ['sidebar', 3], ['rule', 3], ['split', 3], ['card', 2], ['graphic', 2]]),
+    sectionStyle: weighted(random, [['full', 4], ['half', 3], ['number', 3], ['rule', 3], ['centred', 2]]),
     // Where the slide number sits, and whether there is a footer at all.
     chrome: weighted(random, [['corner', 5], ['band', 2], ['none', 2]]),
+    // The colour a slide gives a whole side to: the title, the dividers, the
+    // closing. On a light deck that is usually the primary, and sometimes the
+    // ink - which is what makes a light deck's section slides black. On a dark
+    // deck the quiet tint is the usual one, because a full slide of lifted
+    // primary among dark slides is a shout.
+    cover: weighted(random, covers.length ? covers : [['ink', 1]]),
+    // Whether the big slides set their words from the left or down the middle.
+    align: weighted(random, [['left', 7], ['center', 3]]),
     // Any of the kinds, since every one of them is drawn to sit behind text at
     // the opacities the layouts use. A deck gets one kind and keeps it: the
     // variety is meant to be between decks, not between slides.
@@ -115,9 +143,12 @@ function makeTheme(random, opts) {
   // Labels sit on paper and on tinted bands alike, so they must read on both.
   // A projector is not a page. Nothing here is smaller than eleven points, and
   // body text starts at a size a room can read.
+  // How loudly the deck speaks. Only the two big steps move: the body has to
+  // stay a size a room can read whatever character the deck has.
+  const loud = weighted(random, [[0.92, 2], [1, 5], [1.1, 3]]);
   t.fs = {
-    display: Math.max(30, random.pick([46, 50, 54]) * k),
-    title: Math.max(22, random.pick([30, 33, 36]) * k),
+    display: Math.max(30, random.pick([46, 50, 54]) * loud * k),
+    title: Math.max(22, random.pick([30, 33, 36]) * loud * k),
     heading: Math.max(15, random.pick([18, 20]) * k),
     body: Math.max(13, (body === 'serif' ? 18 : 17.5) * k),
     small: Math.max(12, 15 * k),
@@ -502,6 +533,37 @@ function featureRow(t, region, count) {
   });
 }
 
+/**
+ * The same three-across block, counted rather than illustrated: a numeral, a
+ * heading and a line. The numerals are written here rather than worked out
+ * from anything - they count the points on the slide, not the slides in the
+ * deck, and a slide's own number is never written down anywhere.
+ */
+function numberedRow(t, region, count) {
+  const r = t.random;
+  const items = shuffled(r, WORDS.features).slice(0, count);
+  const boxes = columns(t, region, items.map(() => 1));
+  const ns = { family: t.head, size: t.fs.display * 0.62, bold: true, color: ink(t, 'paper', ['accent', 'secondary', 'primary'], { size: t.fs.display * 0.62, bold: true }), lineHeight: 1, fit: 'shrink' };
+  const hs = styles.heading(t);
+  const bs = styles.small(t);
+  const nH = Math.ceil(t.fs.display * 0.72);
+  const hH = Math.max(...items.map(([head]) => textH(head, boxes[0].w, hs)));
+  const bH = Math.max(...items.map(([, words]) => textH(words, boxes[0].w, bs)));
+  const rule = 2;
+  const block = nH + 10 * t.k + rule + 14 * t.k + hH + 6 * t.k + bH;
+  const top = region.y + Math.max(0, (region.h - block) / 2);
+  return items.flatMap(([head, words], i) => {
+    const box = boxes[i];
+    const y = top + nH + 10 * t.k;
+    return [
+      text({ x: box.x, y: top, w: box.w, h: nH }, String(i + 1).padStart(2, '0'), ns, head + ' number', { preset: 'heading' }),
+      el('shape', { x: box.x, y, w: box.w, h: rule }, { shape: 'rect', fill: 'rule' }, {}, { name: head + ' rule', fixed: true }),
+      text({ x: box.x, y: y + rule + 14 * t.k, w: box.w, h: hH }, head, hs, head + ' heading', { preset: 'heading' }),
+      text({ x: box.x, y: y + rule + 14 * t.k + hH + 6 * t.k, w: box.w, h: bH }, words, bs, head + ' text', { preset: 'body' }),
+    ];
+  });
+}
+
 /* ---------------------------------------------------------------- layouts */
 
 /** The title slide. */
@@ -511,40 +573,53 @@ function titleLayout(t, variant) {
   const layout = makeLayout('Title', 'title');
   const words = WORDS.deckTitles[0];
   const sub = r.pick(WORDS.deckSubs);
-  const kicker = r.pick(WORDS.kickers);
   const els = [];
+  const middle = t.align === 'center';
 
+  // The deck name, the title, the line under it and the date, set as one
+  // block in the middle of whatever space they are given. A deck that sets
+  // its big slides down the middle is handed the whole of that space, so the
+  // words are centred on the slide rather than inside a column of it.
   const block = (x, w, ink, under, kickerColor) => {
-    const ks = { ...styles.kicker(t, kickerColor), align: undefined };
-    const ts = styles.display(t, ink);
-    const ss = { family: t.head, size: t.fs.body, color: under, lineHeight: 1.35, fit: 'shrink' };
+    const ks = { ...styles.kicker(t, kickerColor), align: middle ? 'center' : undefined };
+    const ts = styles.display(t, ink, { align: middle ? 'center' : undefined });
+    const ss = { family: t.head, size: t.fs.body, color: under, lineHeight: 1.35, fit: 'shrink', align: middle ? 'center' : undefined };
     const kH = textH('{deck}', w, ks);
     const tH = textH(words, w, ts);
     const sH = textH(sub, w, ss);
     const total = kH + 12 * t.k + tH + 16 * t.k + sH;
     const y0 = (t.H - total) / 2;
+    const dateW = middle ? w : span(t, 4);
     return [
       text({ x, y: y0, w, h: kH }, '{deck}', ks, 'Kicker', { preset: 'label' }),
       text({ x, y: y0 + kH + 12 * t.k, w, h: tH }, words, ts, 'Title', { preset: 'title' }),
       text({ x, y: y0 + kH + 12 * t.k + tH + 16 * t.k, w, h: sH }, sub, ss, 'Subtitle', { preset: 'subtitle' }),
-      el('field', { x, y: t.H - t.m * 0.62 - 22 * t.k, w: span(t, 4), h: 22 * t.k }, { family: t.head, size: t.fs.caption, color: under, align: 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }),
+      el('field', { x, y: t.H - t.m * 0.62 - 22 * t.k, w: dateW, h: 22 * t.k }, { family: t.head, size: t.fs.caption, color: under, align: middle ? 'center' : 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }),
     ];
   };
 
+  // Where the words go when the whole slide is theirs.
+  const whole = () => (middle ? [t.m, full(t)] : [t.m, span(t, 8)]);
+
   if (style === 'band') {
-    const ink = readable(t.pal, 'primary', ['paper']);
-    const under = readable(t.pal, 'primary', ['tint', 'highlight', 'paper'], 4.5);
-    const kickerColor = readable(t.pal, 'primary', ['highlight', 'accent', 'tint'], 4.5);
+    const ink = readable(t.pal, t.cover, ['paper']);
+    const under = readable(t.pal, t.cover, ['tint', 'highlight', 'paper'], 4.5);
+    const kickerColor = readable(t.pal, t.cover, ['highlight', 'accent', 'tint'], 4.5);
+    const [x, w] = whole();
     els.push(
-      el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Title background', fixed: true }),
-      el('pattern', { x: t.W * 0.5, y: 0, w: t.W * 0.5, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.32 }, { seed: seedFrom(r) }, { name: 'Title graphic' }),
-      ...block(t.m, span(t, 8), ink, under, kickerColor),
+      el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Title background', fixed: true }),
+      // Half the slide when the words are down one side of it; all of it, and
+      // quieter, when they are down the middle and there is no side left.
+      middle
+        ? el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.22 }, { seed: seedFrom(r) }, { name: 'Title graphic' })
+        : el('pattern', { x: t.W * 0.5, y: 0, w: t.W * 0.5, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.32 }, { seed: seedFrom(r) }, { name: 'Title graphic' }),
+      ...block(x, w, ink, under, kickerColor),
     );
   } else if (style === 'sidebar') {
     const sideW = half(t.W * r.pick([0.34, 0.4]));
-    const onSide = readable(t.pal, 'primary', ['paper']);
+    const onSide = readable(t.pal, t.cover, ['paper']);
     els.push(
-      el('shape', { x: 0, y: 0, w: sideW, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Side band', fixed: true }),
+      el('shape', { x: 0, y: 0, w: sideW, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Side band', fixed: true }),
       el('pattern', { x: 0, y: t.H * 0.6, w: sideW, h: t.H * 0.4 }, { kind: t.pattern.kind, scheme: 'brand', density: t.pattern.density, opacity: 0.6 }, { seed: seedFrom(r) }, { name: 'Side graphic' }),
     );
     // The title sits on paper beside the band, so the band is decoration, not
@@ -552,46 +627,79 @@ function titleLayout(t, variant) {
     const x = sideW + t.m;
     els.push(...block(x, t.W - sideW - 2 * t.m, 'primary', 'muted', t.kicker));
     els.push(el('field', { x: t.m * 0.5, y: t.H - t.m * 0.62 - 44 * t.k, w: sideW - t.m * 0.9, h: 44 * t.k }, { family: t.head, size: t.fs.caption, color: onSide, align: 'left', valign: 'bottom', lineHeight: 1.3, fit: 'shrink' }, { field: 'deck' }, { name: 'Deck name' }));
+  } else if (style === 'split') {
+    // A field of colour across the top with the name and the title in it, and
+    // the rest of it said quietly on paper underneath.
+    const ink = readable(t.pal, t.cover, ['paper']);
+    const kickerColor = readable(t.pal, t.cover, ['highlight', 'accent', 'tint'], 4.5);
+    const pad = half(t.m * 0.85);
+    const [x, w] = middle ? [t.m, full(t)] : [t.m, span(t, 9)];
+    const ks = { ...styles.kicker(t, kickerColor), align: middle ? 'center' : undefined };
+    const ts = styles.display(t, ink, { size: t.fs.display * 0.92, align: middle ? 'center' : undefined });
+    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink', align: middle ? 'center' : undefined };
+    const kH = textH('{deck}', w, ks);
+    const tH = textH(words, w, ts);
+    const sH = textH(sub, w, ss);
+    const bandH = half(Math.max(t.H * 0.54, pad * 2 + kH + 12 * t.k + tH));
+    const y0 = (bandH - (kH + 12 * t.k + tH)) / 2;
+    els.push(
+      el('shape', { x: 0, y: 0, w: t.W, h: bandH }, { shape: 'rect', fill: t.cover }, {}, { name: 'Title band', fixed: true }),
+      el('pattern', { x: 0, y: 0, w: t.W, h: bandH }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.26 }, { seed: seedFrom(r) }, { name: 'Title graphic' }),
+      text({ x, y: y0, w, h: kH }, '{deck}', ks, 'Kicker', { preset: 'label' }),
+      text({ x, y: y0 + kH + 12 * t.k, w, h: tH }, words, ts, 'Title', { preset: 'title' }),
+      text({ x, y: bandH + t.gap, w, h: sH }, sub, ss, 'Subtitle', { preset: 'subtitle' }),
+      el('field', { x, y: t.H - t.m * 0.62 - 22 * t.k, w: middle ? w : span(t, 4), h: 22 * t.k }, { family: t.head, size: t.fs.caption, color: 'muted', align: middle ? 'center' : 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }),
+    );
   } else if (style === 'card') {
     const cardW = span(t, 8);
     const pad = half(30 * t.k);
-    els.push(el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: 'brand', density: t.pattern.density, opacity: 0.9, fill: 'tint' }, { seed: seedFrom(r) }, { name: 'Background graphic' }));
-    const ks = styles.kicker(t);
-    const ts = styles.display(t, 'primary');
-    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink' };
+    // On a dark deck the card is the lighter thing and the slide around it the
+    // darker, which is the way round a dark deck reads.
+    const cardFill = t.mode === 'dark' ? 'tint' : 'paper';
+    const behind = t.mode === 'dark' ? 'paper' : 'tint';
+    // Full brand colours behind the card on a light deck, where they are dark
+    // colours on a pale ground; tints of them on a dark one, where they have
+    // been lifted and a whole slide of them would out-shout the card.
+    els.push(el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: t.mode === 'dark' ? 'soft' : 'brand', density: t.pattern.density, opacity: 0.9, fill: behind }, { seed: seedFrom(r) }, { name: 'Background graphic' }));
+    const ks = { ...styles.kicker(t, ink(t, cardFill, ['accent', 'secondary', 'primary'], { size: t.fs.label, bold: true })), align: middle ? 'center' : undefined };
+    const ts = styles.display(t, ink(t, cardFill, ['primary', 'secondary', 'ink'], { size: t.fs.display, bold: true }), { align: middle ? 'center' : undefined });
+    const ss = { family: t.head, size: t.fs.body, color: ink(t, cardFill, ['muted', 'ink'], { size: t.fs.body }), lineHeight: 1.35, fit: 'shrink', align: middle ? 'center' : undefined };
     const inner = cardW - 2 * pad;
     const kH = textH('{deck}', inner, ks);
     const tH = textH(words, inner, ts);
     const sH = textH(sub, inner, ss);
     const cardH = pad * 2 + kH + 12 * t.k + tH + 16 * t.k + sH;
     const cardY = (t.H - cardH) / 2;
+    const cardX = middle ? (t.W - cardW) / 2 : t.m;
     els.push(
-      el('shape', { x: t.m, y: cardY, w: cardW, h: cardH }, { shape: 'rect', fill: 'paper', radius: Math.max(t.radius, 6) }, {}, { name: 'Title card', fixed: true }),
-      text({ x: t.m + pad, y: cardY + pad, w: inner, h: kH }, '{deck}', ks, 'Kicker', { preset: 'label' }),
-      text({ x: t.m + pad, y: cardY + pad + kH + 12 * t.k, w: inner, h: tH }, words, ts, 'Title', { preset: 'title' }),
-      text({ x: t.m + pad, y: cardY + pad + kH + 12 * t.k + tH + 16 * t.k, w: inner, h: sH }, sub, ss, 'Subtitle', { preset: 'subtitle' }),
+      el('shape', { x: cardX, y: cardY, w: cardW, h: cardH }, { shape: 'rect', fill: cardFill, radius: Math.max(t.radius, 6) }, {}, { name: 'Title card', fixed: true }),
+      text({ x: cardX + pad, y: cardY + pad, w: inner, h: kH }, '{deck}', ks, 'Kicker', { preset: 'label' }),
+      text({ x: cardX + pad, y: cardY + pad + kH + 12 * t.k, w: inner, h: tH }, words, ts, 'Title', { preset: 'title' }),
+      text({ x: cardX + pad, y: cardY + pad + kH + 12 * t.k + tH + 16 * t.k, w: inner, h: sH }, sub, ss, 'Subtitle', { preset: 'subtitle' }),
     );
   } else if (style === 'graphic') {
+    const [x, w] = whole();
     els.push(el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.55 }, { seed: seedFrom(r) }, { name: 'Background graphic' }));
-    els.push(...block(t.m, span(t, 8), 'primary', 'muted', t.kicker));
+    els.push(...block(x, w, 'primary', 'muted', t.kicker));
   } else {
     // rule: the title on paper over a short accent rule.
+    const w = middle ? full(t) : span(t, 9);
     const x = t.m;
-    const w = span(t, 9);
-    const ks = styles.kicker(t);
-    const ts = styles.display(t, 'primary');
-    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink' };
+    const ruleW = span(t, 2);
+    const ks = { ...styles.kicker(t), align: middle ? 'center' : undefined };
+    const ts = styles.display(t, 'primary', { align: middle ? 'center' : undefined });
+    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink', align: middle ? 'center' : undefined };
     const kH = textH('{deck}', w, ks);
     const tH = textH(words, w, ts);
     const sH = textH(sub, w, ss);
     const total = 6 + 14 * t.k + kH + 12 * t.k + tH + 16 * t.k + sH;
     const y0 = (t.H - total) / 2;
     els.push(
-      el('shape', { x, y: y0, w: span(t, 2), h: 6 }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title rule', fixed: true }),
+      el('shape', { x: middle ? (t.W - ruleW) / 2 : x, y: y0, w: ruleW, h: 6 }, { shape: 'rect', fill: 'accent' }, {}, { name: 'Title rule', fixed: true }),
       text({ x, y: y0 + 6 + 14 * t.k, w, h: kH }, '{deck}', ks, 'Kicker', { preset: 'label' }),
       text({ x, y: y0 + 6 + 14 * t.k + kH + 12 * t.k, w, h: tH }, words, ts, 'Title', { preset: 'title' }),
       text({ x, y: y0 + 6 + 14 * t.k + kH + 12 * t.k + tH + 16 * t.k, w, h: sH }, sub, ss, 'Subtitle', { preset: 'subtitle' }),
-      el('field', { x, y: t.H - t.m * 0.62 - 22 * t.k, w: span(t, 4), h: 22 * t.k }, { family: t.head, size: t.fs.caption, color: 'muted', align: 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }),
+      el('field', { x, y: t.H - t.m * 0.62 - 22 * t.k, w: middle ? w : span(t, 4), h: 22 * t.k }, { family: t.head, size: t.fs.caption, color: 'muted', align: middle ? 'center' : 'left', valign: 'middle', fit: 'shrink' }, { field: 'date' }, { name: 'Date' }),
     );
   }
   layout.elements = els;
@@ -606,19 +714,25 @@ function sectionLayout(t, variant) {
   const words = r.pick(WORDS.sectionTitles);
   const note = r.pick(WORDS.sectionNotes);
   const els = [];
-  const onColor = readable(t.pal, 'primary', ['paper']);
-  const underColor = readable(t.pal, 'primary', ['tint', 'highlight', 'paper'], 4.5);
-  const numberColor = readable(t.pal, 'primary', ['highlight', 'accent', 'tint'], 4.5);
+  const onColor = readable(t.pal, t.cover, ['paper']);
+  const underColor = readable(t.pal, t.cover, ['tint', 'highlight', 'paper'], 4.5);
+  const numberColor = readable(t.pal, t.cover, ['highlight', 'accent', 'tint'], 4.5);
+  // The centred variant is centred whatever the deck usually does; everything
+  // else follows the deck.
+  const middle = style === 'centred' || t.align === 'center';
+  const mid = middle ? 'center' : undefined;
 
-  if (style === 'full' || style === 'number') {
-    els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Section background', fixed: true }));
+  if (style === 'full' || style === 'number' || style === 'centred') {
+    els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Section background', fixed: true }));
     if (style === 'number') {
       els.push(el('pattern', { x: t.W * 0.58, y: 0, w: t.W * 0.42, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.3 }, { seed: seedFrom(r) }, { name: 'Section graphic' }));
+    } else if (style === 'centred') {
+      els.push(el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.24 }, { seed: seedFrom(r) }, { name: 'Section graphic' }));
     }
-    const w = span(t, 8);
-    const ts = styles.display(t, onColor, { size: t.fs.display * 0.86 });
-    const ns = { family: t.head, size: t.fs.display * 0.7, bold: true, color: numberColor, align: 'left', valign: 'bottom', fit: 'shrink' };
-    const ss = { family: t.head, size: t.fs.body, color: underColor, lineHeight: 1.35, fit: 'shrink' };
+    const w = middle ? full(t) : span(t, 8);
+    const ts = styles.display(t, onColor, { size: t.fs.display * 0.86, align: mid });
+    const ns = { family: t.head, size: t.fs.display * 0.7, bold: true, color: numberColor, align: middle ? 'center' : 'left', valign: 'bottom', fit: 'shrink' };
+    const ss = { family: t.head, size: t.fs.body, color: underColor, lineHeight: 1.35, fit: 'shrink', align: mid };
     const nH = t.fs.display * 0.8;
     const tH = textH(words, w, ts);
     const sH = textH(note, w, ss);
@@ -626,30 +740,50 @@ function sectionLayout(t, variant) {
     const y0 = (t.H - total) / 2;
     els.push(
       // The number here is the slide's own, worked out from where it sits.
-      el('field', { x: t.m, y: y0, w: span(t, 3), h: nH }, ns, { field: 'number' }, { name: 'Section number' }),
+      el('field', { x: t.m, y: y0, w: middle ? w : span(t, 3), h: nH }, ns, { field: 'number' }, { name: 'Section number' }),
       text({ x: t.m, y: y0 + nH + 10 * t.k, w, h: tH }, words, ts, 'Section title', { preset: 'title' }),
       text({ x: t.m, y: y0 + nH + 10 * t.k + tH + 14 * t.k, w, h: sH }, note, ss, 'Section note', { preset: 'subtitle' }),
+    );
+  } else if (style === 'rule') {
+    // No colour field at all: a rule the width of two columns, the number
+    // beside it, and the words on the slide's own paper. The quietest divider
+    // a deck can have, and the one a dark deck looks best with.
+    const w = middle ? full(t) : span(t, 9);
+    const ruleW = span(t, 2);
+    const ts = styles.display(t, 'primary', { size: t.fs.display * 0.86, align: mid });
+    const ns = { family: t.head, size: t.fs.title, bold: true, color: ink(t, 'paper', ['accent', 'secondary', 'primary'], { size: t.fs.title, bold: true }), align: middle ? 'center' : 'left', valign: 'bottom', fit: 'shrink' };
+    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink', align: mid };
+    const nH = t.fs.title * 1.2;
+    const tH = textH(words, w, ts);
+    const sH = textH(note, w, ss);
+    const total = 8 + 16 * t.k + nH + 8 * t.k + tH + 14 * t.k + sH;
+    const y0 = (t.H - total) / 2;
+    els.push(
+      el('shape', { x: middle ? (t.W - ruleW) / 2 : t.m, y: y0, w: ruleW, h: 8 }, { shape: 'rect', fill: t.cover === 'tint' ? 'accent' : t.cover }, {}, { name: 'Section rule', fixed: true }),
+      el('field', { x: t.m, y: y0 + 8 + 16 * t.k, w: middle ? w : span(t, 3), h: nH }, ns, { field: 'number' }, { name: 'Section number' }),
+      text({ x: t.m, y: y0 + 8 + 16 * t.k + nH + 8 * t.k, w, h: tH }, words, ts, 'Section title', { preset: 'title' }),
+      text({ x: t.m, y: y0 + 8 + 16 * t.k + nH + 8 * t.k + tH + 14 * t.k, w, h: sH }, note, ss, 'Section note', { preset: 'subtitle' }),
     );
   } else {
     // half: colour on one side, the words on paper on the other.
     const left = r() < 0.5;
     const bandW = half(t.W * 0.42);
     els.push(
-      el('shape', { x: left ? 0 : t.W - bandW, y: 0, w: bandW, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Section band', fixed: true }),
+      el('shape', { x: left ? 0 : t.W - bandW, y: 0, w: bandW, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Section band', fixed: true }),
       el('pattern', { x: left ? 0 : t.W - bandW, y: 0, w: bandW, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.28 }, { seed: seedFrom(r) }, { name: 'Section graphic' }),
     );
     const x = left ? bandW + t.m : t.m;
     const w = t.W - bandW - 2 * t.m;
-    const ts = styles.display(t, 'primary', { size: t.fs.display * 0.82 });
-    const ns = { family: t.head, size: t.fs.title, bold: true, color: ink(t, 'paper', ['accent', 'secondary', 'primary'], { size: t.fs.title, bold: true }), valign: 'bottom', fit: 'shrink' };
-    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink' };
+    const ts = styles.display(t, 'primary', { size: t.fs.display * 0.82, align: mid });
+    const ns = { family: t.head, size: t.fs.title, bold: true, color: ink(t, 'paper', ['accent', 'secondary', 'primary'], { size: t.fs.title, bold: true }), align: middle ? 'center' : 'left', valign: 'bottom', fit: 'shrink' };
+    const ss = { family: t.head, size: t.fs.body, color: 'muted', lineHeight: 1.35, fit: 'shrink', align: mid };
     const nH = t.fs.title * 1.2;
     const tH = textH(words, w, ts);
     const sH = textH(note, w, ss);
     const total = nH + 8 * t.k + tH + 14 * t.k + sH;
     const y0 = (t.H - total) / 2;
     els.push(
-      el('field', { x, y: y0, w: span(t, 3), h: nH }, ns, { field: 'number' }, { name: 'Section number' }),
+      el('field', { x, y: y0, w: middle ? w : span(t, 3), h: nH }, ns, { field: 'number' }, { name: 'Section number' }),
       text({ x, y: y0 + nH + 8 * t.k, w, h: tH }, words, ts, 'Section title', { preset: 'title' }),
       text({ x, y: y0 + nH + 8 * t.k + tH + 14 * t.k, w, h: sH }, note, ss, 'Section note', { preset: 'subtitle' }),
     );
@@ -661,7 +795,7 @@ function sectionLayout(t, variant) {
 /** A heading with something under it: the slide most decks are mostly made of. */
 function contentLayout(t, variant) {
   const r = t.random;
-  const arrangement = variant || weighted(r, [['bullets', 5], ['bulletsPicture', 4], ['features', 3], ['bulletsStat', 2], ['paragraph', 2]]);
+  const arrangement = variant || weighted(r, [['bullets', 5], ['bulletsPicture', 4], ['features', 3], ['numbered', 3], ['bulletsChart', 3], ['bulletsStat', 2], ['paragraph', 2]]);
   const layout = makeLayout('Title and content', 'titleContent');
   const head = heading(t, r.pick(WORDS.titles));
   const region = { x: t.m, y: head.top, w: full(t), h: (t.chrome === 'none' ? t.H - t.m * 0.8 : t.footY - t.gap * 0.6) - head.top };
@@ -670,8 +804,18 @@ function contentLayout(t, variant) {
   if (arrangement === 'bullets') {
     body = stack(t, region, [bulletBlock(t, region.w, words)], { anchor: 'top' });
   } else if (arrangement === 'paragraph') {
-    body = stack(t, region, [paragraphBlock(t, span(t, 9), r.pick(WORDS.paragraphs))], { anchor: 'top' });
+    // A paragraph is set narrower than the slide, because a line that runs the
+    // whole width of a projected slide is a line nobody finds their way back to.
     body = stack(t, { ...region, w: span(t, 9) }, [paragraphBlock(t, span(t, 9), r.pick(WORDS.paragraphs))], { anchor: 'top' });
+  } else if (arrangement === 'numbered') {
+    body = numberedRow(t, region, t.W > 800 ? r.pick([3, 3, 4]) : 3);
+  } else if (arrangement === 'bulletsChart') {
+    const [a, b] = columns(t, region, [6, 6]);
+    const spec = r.pick(CHARTS.filter((c) => c[1].kind !== 'table'));
+    body = [
+      ...stack(t, a, [bulletBlock(t, a.w, words)], { anchor: 'top' }),
+      ...stack(t, b, [chartBlock(t, spec)], { anchor: 'top' }),
+    ];
   } else if (arrangement === 'features') {
     body = featureRow(t, region, t.W > 800 ? r.pick([3, 3, 4]) : 3);
   } else if (arrangement === 'bulletsStat') {
@@ -807,26 +951,28 @@ function quoteLayout(t, variant) {
   const layout = makeLayout('Quote', 'quote');
   const els = [];
   const onColour = style === 'colour';
-  const ink = onColour ? readable(t.pal, 'primary', ['paper']) : 'primary';
-  const under = onColour ? readable(t.pal, 'primary', ['tint', 'highlight', 'paper'], 4.5) : 'muted';
-  const markColour = onColour ? readable(t.pal, 'primary', ['highlight', 'accent', 'tint'], 3) : 'accent';
-  if (style === 'colour') els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Quote background', fixed: true }));
+  const ink = onColour ? readable(t.pal, t.cover, ['paper']) : 'primary';
+  const under = onColour ? readable(t.pal, t.cover, ['tint', 'highlight', 'paper'], 4.5) : 'muted';
+  const markColour = onColour ? readable(t.pal, t.cover, ['highlight', 'accent', 'tint'], 3) : 'accent';
+  if (style === 'colour') els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Quote background', fixed: true }));
   if (style === 'tint') els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'tint' }, {}, { name: 'Quote background', fixed: true }));
   const words = r.pick(WORDS.quotes);
   const by = r.pick(WORDS.quoteBy);
-  const w = span(t, 9);
-  const qs = { family: 'serif', size: t.fs.title * 1.02, italic: true, color: ink, lineHeight: 1.3, fit: 'shrink' };
-  const cs = styles.caption(t, { color: under, size: t.fs.small });
+  const middle = t.align === 'center';
+  const mid = middle ? 'center' : undefined;
+  const w = middle ? full(t) : span(t, 9);
+  const qs = { family: 'serif', size: t.fs.title * 1.02, italic: true, color: ink, lineHeight: 1.3, fit: 'shrink', align: mid };
+  const cs = styles.caption(t, { color: under, size: t.fs.small, align: mid });
   const size = half(40 * t.k);
   const qH = textH(words, w, qs);
   const cH = textH(by, w, cs);
   const total = size + 16 * t.k + qH + 16 * t.k + cH;
   const y0 = (t.H - total) / 2;
   els.push(
-    el('icon', { x: t.m, y: y0, w: size, h: size }, { color: markColour, badge: 'none' }, { icon: 'quote' }, { name: 'Quote mark' }),
+    el('icon', { x: middle ? (t.W - size) / 2 : t.m, y: y0, w: size, h: size }, { color: markColour, badge: 'none' }, { icon: 'quote' }, { name: 'Quote mark' }),
     text({ x: t.m, y: y0 + size + 16 * t.k, w, h: qH }, words, qs, 'Quote', { preset: 'quote' }),
-    text({ x: t.m, y: y0 + size + 16 * t.k + qH + 16 * t.k, w: span(t, 7), h: cH }, by, cs, 'Attribution', { preset: 'caption' }),
-    ...chrome(t, { on: style === 'colour' ? 'primary' : style === 'tint' ? 'tint' : 'paper' }),
+    text({ x: t.m, y: y0 + size + 16 * t.k + qH + 16 * t.k, w: middle ? w : span(t, 7), h: cH }, by, cs, 'Attribution', { preset: 'caption' }),
+    ...chrome(t, { on: style === 'colour' ? t.cover : style === 'tint' ? 'tint' : 'paper' }),
   );
   layout.elements = els;
   return layout;
@@ -839,8 +985,8 @@ function imageLayout(t, variant) {
   const els = [el('image', { x: 0, y: 0, w: t.W, h: t.H }, { fit: 'cover' }, {}, { name: 'Picture' })];
   const words = r.pick(WORDS.titles);
   const caption = r.pick(WORDS.captions);
-  const ink = readable(t.pal, 'primary', ['paper']);
-  const under = readable(t.pal, 'primary', ['tint', 'highlight', 'paper'], 4.5);
+  const ink = readable(t.pal, t.cover, ['paper']);
+  const under = readable(t.pal, t.cover, ['tint', 'highlight', 'paper'], 4.5);
   const ts = styles.title(t, ink, { valign: 'top' });
   const cs = styles.caption(t, { color: under });
   if (style === 'side') {
@@ -851,7 +997,7 @@ function imageLayout(t, variant) {
     const cH = textH(caption, inner, cs);
     const y0 = (t.H - tH - 14 * t.k - cH) / 2;
     els.push(
-      el('shape', { x: 0, y: 0, w, h: t.H }, { shape: 'rect', fill: 'primary', opacity: 0.94 }, {}, { name: 'Caption panel', fixed: true }),
+      el('shape', { x: 0, y: 0, w, h: t.H }, { shape: 'rect', fill: t.cover, opacity: 0.94 }, {}, { name: 'Caption panel', fixed: true }),
       text({ x: pad, y: y0, w: inner, h: tH }, words, ts, 'Title', { preset: 'title' }),
       text({ x: pad, y: y0 + tH + 14 * t.k, w: inner, h: cH }, caption, cs, 'Caption', { preset: 'caption' }),
     );
@@ -863,7 +1009,7 @@ function imageLayout(t, variant) {
     const boxH = tH + 12 * t.k + cH + 2 * pad;
     const y = t.H - t.m * 0.7 - boxH;
     els.push(
-      el('shape', { x: t.m, y, w, h: boxH }, { shape: 'rect', fill: 'primary', radius: t.radius, opacity: 0.94 }, {}, { name: 'Caption panel', fixed: true }),
+      el('shape', { x: t.m, y, w, h: boxH }, { shape: 'rect', fill: t.cover, radius: t.radius, opacity: 0.94 }, {}, { name: 'Caption panel', fixed: true }),
       text({ x: t.m + pad, y: y + pad, w: w - 2 * pad, h: tH }, words, ts, 'Title', { preset: 'title' }),
       text({ x: t.m + pad, y: y + pad + tH + 12 * t.k, w: w - 2 * pad, h: cH }, caption, cs, 'Caption', { preset: 'caption' }),
     );
@@ -874,7 +1020,7 @@ function imageLayout(t, variant) {
     const bandH = tH + 14 * t.k + cH + t.m * 0.9;
     const y = t.H - bandH;
     els.push(
-      el('shape', { x: 0, y, w: t.W, h: bandH }, { shape: 'rect', fill: 'primary', opacity: 0.9 }, {}, { name: 'Caption band', fixed: true }),
+      el('shape', { x: 0, y, w: t.W, h: bandH }, { shape: 'rect', fill: t.cover, opacity: 0.9 }, {}, { name: 'Caption band', fixed: true }),
       text({ x: t.m, y: y + t.m * 0.4, w, h: tH }, words, ts, 'Title', { preset: 'title' }),
       text({ x: t.m, y: y + t.m * 0.4 + tH + 14 * t.k, w, h: cH }, caption, cs, 'Caption', { preset: 'caption' }),
     );
@@ -885,7 +1031,7 @@ function imageLayout(t, variant) {
 
 function chartLayout(t, variant) {
   const r = t.random;
-  const style = variant || weighted(r, [['wide', 4], ['withNote', 4], ['two', 2]]);
+  const style = variant || weighted(r, [['wide', 4], ['withNote', 4], ['panel', 3], ['two', 2]]);
   const layout = makeLayout('Chart', 'chart');
   const head = heading(t, r.pick(WORDS.titles));
   const region = { x: t.m, y: head.top, w: full(t), h: (t.chrome === 'none' ? t.H - t.m * 0.8 : t.footY - t.gap * 0.6) - head.top };
@@ -900,6 +1046,24 @@ function chartLayout(t, variant) {
       headingBlock(t, boxes[i].w, spec[0], 'Chart ' + (i + 1) + ' heading'),
       chartBlock(t, spec, 'Chart ' + (i + 1)),
     ], { anchor: 'top' }));
+  } else if (style === 'panel') {
+    // The chart in a box of its own, which is what a slide wants when the
+    // chart is the argument rather than an illustration of one.
+    const spec = r.pick(CHARTS.filter(wideOk));
+    const note = r.pick(WORDS.takeaways);
+    const cs = styles.caption(t);
+    const cH = textH(note, region.w, cs);
+    const pad = panelPad(t) || half(18 * t.k);
+    const boxH = Math.max(120 * t.k, region.h - cH - t.gap);
+    const outlined = t.panel === 'outline';
+    body = [
+      el('shape', { x: region.x, y: region.y, w: region.w, h: boxH }, {
+        shape: 'rect', fill: outlined ? null : 'tint', stroke: outlined ? 'rule' : null, lw: 0.9, radius: t.radius,
+      }, {}, { name: 'Chart panel', fixed: true }),
+      el('chart', { x: region.x + pad, y: region.y + pad, w: region.w - 2 * pad, h: boxH - 2 * pad },
+        { family: t.head, size: Math.max(9, 11 * t.k) }, JSON.parse(JSON.stringify(spec[1])), { name: 'Chart' }),
+      text({ x: region.x, y: region.y + boxH + t.gap, w: region.w, h: cH }, note, cs, 'Takeaway', { preset: 'caption' }),
+    ];
   } else if (style === 'withNote') {
     const [a, b] = columns(t, region, [8, 4]);
     const spec = r.pick(CHARTS.filter(wideOk));
@@ -954,27 +1118,29 @@ function closingLayout(t, variant) {
   const onColour = style !== 'plain';
   const els = [];
   if (style === 'colour') {
-    els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Closing background', fixed: true }));
+    els.push(el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Closing background', fixed: true }));
   } else if (style === 'graphic') {
     els.push(
-      el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: 'primary' }, {}, { name: 'Closing background', fixed: true }),
+      el('shape', { x: 0, y: 0, w: t.W, h: t.H }, { shape: 'rect', fill: t.cover }, {}, { name: 'Closing background', fixed: true }),
       el('pattern', { x: 0, y: 0, w: t.W, h: t.H }, { kind: t.pattern.kind, scheme: 'soft', density: t.pattern.density, opacity: 0.32 }, { seed: seedFrom(r) }, { name: 'Closing graphic' }),
     );
   }
-  const ink = onColour ? readable(t.pal, 'primary', ['paper']) : 'primary';
-  const under = onColour ? readable(t.pal, 'primary', ['tint', 'highlight', 'paper'], 4.5) : 'muted';
+  const ink = onColour ? readable(t.pal, t.cover, ['paper']) : 'primary';
+  const under = onColour ? readable(t.pal, t.cover, ['tint', 'highlight', 'paper'], 4.5) : 'muted';
   const words = r.pick(WORDS.closings);
   const contact = r.pick(WORDS.contacts);
-  const w = span(t, 8);
-  const ts = styles.display(t, ink);
-  const ss = { family: t.head, size: t.fs.body, color: under, lineHeight: 1.4, fit: 'shrink' };
+  const middle = t.align === 'center';
+  const mid = middle ? 'center' : undefined;
+  const w = middle ? full(t) : span(t, 8);
+  const ts = styles.display(t, ink, { align: mid });
+  const ss = { family: t.head, size: t.fs.body, color: under, lineHeight: 1.4, fit: 'shrink', align: mid };
   const tH = textH(words, w, ts);
   const sH = textH(contact, w, ss);
   const total = tH + 20 * t.k + sH;
   const y0 = (t.H - total) / 2;
   els.push(
     text({ x: t.m, y: y0, w, h: tH }, words, ts, 'Title', { preset: 'title' }),
-    text({ x: t.m, y: y0 + tH + 20 * t.k, w: span(t, 6), h: sH }, contact, ss, 'Contact', { preset: 'subtitle' }),
+    text({ x: t.m, y: y0 + tH + 20 * t.k, w: middle ? w : span(t, 6), h: sH }, contact, ss, 'Contact', { preset: 'subtitle' }),
   );
   layout.elements = els;
   return layout;
@@ -1004,13 +1170,13 @@ const BUILDERS = {
 
 /** The variants each kind can be generated in, for "six more". */
 export const LAYOUT_VARIANTS = {
-  title: ['band', 'sidebar', 'rule', 'card', 'graphic'],
-  section: ['full', 'half', 'number'],
-  titleContent: ['bullets', 'bulletsPicture', 'features', 'bulletsStat', 'paragraph'],
+  title: ['band', 'sidebar', 'rule', 'split', 'card', 'graphic'],
+  section: ['full', 'half', 'number', 'rule', 'centred'],
+  titleContent: ['bullets', 'bulletsPicture', 'features', 'numbered', 'bulletsChart', 'bulletsStat', 'paragraph'],
   bigNumber: ['one', 'three', 'withNote'],
   quote: ['plain', 'tint', 'colour'],
   imageFull: ['band', 'corner', 'side'],
-  chart: ['wide', 'withNote', 'two'],
+  chart: ['wide', 'withNote', 'panel', 'two'],
   agenda: ['plain', 'sidePanel', 'graphic'],
   closing: ['colour', 'plain', 'graphic'],
 };
@@ -1019,7 +1185,7 @@ export const LAYOUT_VARIANTS = {
 
 /**
  * A new deck, made by rules from a seed.
- * @param opts {seed, aspect, palette, title, slides: how many to start with}
+ * @param opts {seed, aspect, palette, mode, title, slides: how many to start with}
  */
 export function generateDeck(opts = {}) {
   const seed = String(opts.seed || newSeed());
@@ -1030,17 +1196,22 @@ export function generateDeck(opts = {}) {
   deck.palette = t.pal;
   deck.fonts = { heading: t.head, body: t.body, mono: 'mono' };
   deck.options.transition = weighted(random, [['fade', 5], ['none', 3], ['slide', 2]]);
+  // Which mode the deck is in, so that choosing another palette later keeps it
+  // dark rather than quietly turning the lights on.
+  deck.options.mode = t.mode;
   const of = (kind) => (layouts.find((l) => l.kind === kind) || layouts[0]).id;
   const section = { id: newId('sc'), title: 'Where we are', collapsed: false };
   deck.sections = [section];
-  // A deck starts with the slides somebody is going to make anyway.
+  // A deck starts with the slides somebody is going to make anyway: a title,
+  // what it is going to cover, the first divider, a few slides under it and a
+  // closing. Which few varies, so that pressing Generate another twice does
+  // not give the same seven slides in two coats of paint.
   const plan = [
     ['title', null],
     ['agenda', null],
     ['section', section.id],
     ['titleContent', section.id],
-    ['bigNumber', section.id],
-    ['chart', section.id],
+    ...shuffled(random, ['bigNumber', 'chart', 'twoColumn', 'comparison', 'quote']).slice(0, 2).map((kind) => [kind, section.id]),
     ['closing', null],
   ].slice(0, Math.max(2, Math.min(7, opts.slides || 7)));
   deck.slides = plan.map(([kind, sectionId]) => {
@@ -1067,7 +1238,7 @@ export function generateDeck(opts = {}) {
  * ordinary "this slide uses that layout" - and what the slide has written moves
  * to the element of the same name, which is what makeOptions' names are for.
  *
- * @param opts {seed, aspect, palette, kind, count, offset}
+ * @param opts {seed, aspect, palette, mode, kind, count, offset}
  * @returns [{id, seed, layout}]
  */
 export function generateSlideLayouts(opts = {}) {
@@ -1081,8 +1252,10 @@ export function generateSlideLayouts(opts = {}) {
     const seed = String(opts.seed || 'slide') + ':' + n;
     const random = rng('slide:' + GENERATOR_VERSION + ':' + seed);
     // The palette is held if one was given, so "hold this palette while I try
-    // layouts" is nothing more than passing it in every time.
-    const t = makeTheme(random, { aspect: opts.aspect, palette: opts.palette });
+    // layouts" is nothing more than passing it in every time. The mode is held
+    // the same way and defaults to light, because these layouts go onto a deck
+    // that already has a mode of its own and must not fight it.
+    const t = makeTheme(random, { aspect: opts.aspect, palette: opts.palette, mode: opts.mode === 'dark' ? 'dark' : 'light' });
     const layout = BUILDERS[kind](t, variants[n % variants.length]);
     layout.name = layout.name + ' ' + (n + 1);
     out.push({ id: layout.id, seed, layout });
@@ -1102,6 +1275,7 @@ export function generateLayoutsFor(opts = {}) {
     seed,
     aspect: t.aspect,
     palette: t.pal,
+    mode: t.mode,
     fonts: { heading: t.head, body: t.body, mono: 'mono' },
     transition: weighted(random, [['fade', 5], ['none', 3], ['slide', 2]]),
     layouts: Object.keys(BUILDERS).map((kind) => BUILDERS[kind](t)),

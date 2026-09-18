@@ -1236,29 +1236,60 @@ function chooseLayout() {
 }
 
 function choosePalette() {
-  import('../shared/color.js').then(({ PALETTES, completePalette }) => {
+  import('../shared/color.js').then(({ PALETTES, paletteIn, isDarkPalette }) => {
     const d = deck();
+    // A palette and a mode, not fourteen palettes. Dark is the same palette on
+    // a deep ground: the same nine roles, so every slide, chart and graphic
+    // follows without anything being recoloured by hand.
+    let mode = d.options.mode === 'dark' || isDarkPalette(d.palette) ? 'dark' : 'light';
+    const apply = (p) => {
+      d.palette = paletteIn(p, mode);
+      d.options.mode = mode;
+      pushUndo('Change the colours');
+      markDirty();
+      repaint();
+    };
+    const row = (id, p) => {
+      const shown = paletteIn(p, mode);
+      return h('button.palette-row' + (p.name === d.palette.name ? '.on' : ''), {
+        onclick: (e) => { e.target.closest('.overlay').remove(); apply(p); },
+      }, [
+        h('div.palette-swatches', ['primary', 'secondary', 'accent', 'highlight', 'tint'].map((role) => {
+          const sw = h('span.swatch-mini');
+          sw.style.background = shown[role];
+          return sw;
+        })),
+        h('span.palette-name', p.name),
+      ]);
+    };
+    const list = h('div.palette-list', Object.entries(PALETTES).map(([id, p]) => row(id, p)));
+    const redraw = () => {
+      clear(list);
+      for (const [id, p] of Object.entries(PALETTES)) list.append(row(id, p));
+    };
     openModal({
       title: 'Colours',
       subtitle: 'Elements name their colours by role, so this recolours every slide, chart and graphic at once.',
       size: 'narrow',
-      body: h('div.palette-list', Object.entries(PALETTES).map(([id, p]) => h('button.palette-row' + (p.name === d.palette.name ? '.on' : ''), {
-        onclick: (e) => {
-          e.target.closest('.overlay').remove();
-          d.palette = completePalette(p);
-          pushUndo('Change the colours');
-          markDirty();
-          repaint();
-        },
-      }, [
-        h('div.palette-swatches', ['primary', 'secondary', 'accent', 'highlight', 'tint'].map((role) => {
-          const sw = h('span.swatch-mini');
-          sw.style.background = p[role];
-          return sw;
-        })),
-        h('span.palette-name', p.name),
-      ]))),
-      footer: (c) => [h('button.btn', { onclick: () => c.close() }, 'Cancel')],
+      body: h('div', [
+        h('div.seg.wide', [['light', 'Light'], ['dark', 'Dark']].map(([id, label]) => h('button' + (id === mode ? '.on' : ''), {
+          onclick: (e) => {
+            mode = id;
+            e.target.parentElement.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+            e.target.classList.add('on');
+            redraw();
+            // The deck changes as soon as the switch is thrown, so the answer
+            // to "what would dark look like" is the slides themselves. A deck
+            // on colours of its own has nothing to turn dark yet, so it waits
+            // for one of the palettes under the switch to be chosen.
+            const source = Object.values(PALETTES).find((p) => p.name === d.palette.name);
+            if (source) apply(source);
+            else d.options.mode = mode;
+          },
+        }, label))),
+        list,
+      ]),
+      footer: (c) => [h('button.btn', { onclick: () => c.close() }, 'Done')],
     });
   });
 }

@@ -9,7 +9,7 @@ import { test, assert, run } from './harness.js';
 import { measure, printable, unprintable } from '../web/shared/fonts.js';
 import { parseRich, layoutText, wordCount, indentLevel } from '../web/shared/text.js';
 import { parsePath, arcToCubics } from '../web/shared/path.js';
-import { resolveColor, PALETTES, contrast, seriesColors, textOn } from '../web/shared/color.js';
+import { resolveColor, PALETTES, ROLES, contrast, seriesColors, textOn, darkPalette, paletteIn, completePalette, isDarkPalette } from '../web/shared/color.js';
 import { renderChart, niceScale, parseTable, formatNumber, CHART_KINDS, sampleData } from '../web/shared/charts.js';
 import { renderPattern, PATTERN_KINDS, PATTERN_GROUPS, PATTERN_SCHEMES, QUIET_KINDS, rng, hashSeed } from '../web/shared/patterns.js';
 import { GLYPHS, CONTENT_NAMES, searchGlyphs } from '../web/shared/glyphs.js';
@@ -132,6 +132,34 @@ test('every palette puts readable white text on its primary', () => {
     assert.ok(contrast(p.muted, p.paper) >= 4, id + ' muted on paper');
     assert.strictEqual(textOn(p.primary, p), '#ffffff');
   }
+});
+
+test('every palette has a dark side, with the same nine roles and the same name', () => {
+  for (const [id, light] of Object.entries(PALETTES)) {
+    const p = darkPalette(light);
+    assert.strictEqual(p.name, light.name, id + ' changed its name in the dark');
+    assert.deepStrictEqual(Object.keys(p).sort(), ['name', ...ROLES].sort(), id + ' is missing a role');
+    assert.ok(isDarkPalette(p), id + ' dark is not dark: ' + p.paper);
+    assert.ok(!isDarkPalette(light), id + ' light is dark: ' + light.paper);
+    // Everything that carries words carries them at the ratio small text needs,
+    // and the paper is the one thing that must not.
+    assert.ok(contrast(p.ink, p.paper) >= 7, id + ' dark ink on paper');
+    for (const role of ['muted', 'primary', 'secondary', 'accent', 'highlight']) {
+      assert.ok(contrast(p[role], p.paper) >= 4.5, id + ' dark ' + role + ': ' + contrast(p[role], p.paper).toFixed(2));
+    }
+    // The tint is a panel, not a colour for words: it has to be visible against
+    // the paper and no more than that.
+    assert.ok(contrast(p.tint, p.paper) > 1.05 && contrast(p.tint, p.paper) < 2, id + ' dark tint');
+    // White is right on the dark paper and wrong on a lifted brand colour,
+    // which is the whole reason textOn looks past it for a second answer.
+    assert.ok(contrast(p.paper, textOn(p.paper, p)) >= 7, id + ' dark paper carries nothing');
+    assert.ok(contrast(p.primary, textOn(p.primary, p)) >= 4.5, id + ' dark primary carries nothing');
+  }
+  // Asking for light is asking for the palette as it was written.
+  assert.deepStrictEqual(paletteIn(PALETTES.meadow, 'light'), completePalette(PALETTES.meadow));
+  assert.deepStrictEqual(paletteIn(PALETTES.meadow, 'dark'), darkPalette(PALETTES.meadow));
+  // A dark Meadow is not a dark Cardinal: the ground keeps the palette's hue.
+  assert.notStrictEqual(darkPalette(PALETTES.meadow).paper, darkPalette(PALETTES.cardinal).paper);
 });
 
 test('a series of six colours still belongs to the deck', () => {
@@ -612,6 +640,18 @@ test('a graphic fades towards the surface it is on, not towards paper', () => {
   // Same seed, same shapes; only the colours differ, and the dark one is dark.
   assert.deepStrictEqual(light.map((o) => o.segs), dark.map((o) => o.segs));
   assert.ok(brightness(dark) < brightness(light) - 40, 'on ink it is as bright as on paper: ' + brightness(dark) + ' vs ' + brightness(light));
+
+  // And it is just as visible on either, because a soft tint is mixed to a
+  // ratio rather than by an amount: the same amount that leaves a pale blue on
+  // white leaves nothing at all on a deep ground.
+  for (const [where, pal] of [['a light deck', PALETTES.harbor], ['a dark deck', darkPalette(PALETTES.harbor)]]) {
+    const ops = renderPattern({ kind: 'contours', seed: 's', scheme: 'soft' }, box, pal, { surface: 'paper' });
+    const on = resolveColor('paper', pal);
+    for (const c of new Set(ops.map((o) => o.stroke || o.fill).filter(Boolean))) {
+      const ratio = contrast(c, on);
+      assert.ok(ratio > 1.4 && ratio < 2.6, where + ': a soft tint at ' + ratio.toFixed(2) + ' on the paper');
+    }
+  }
 });
 
 test('a graphic on a dark slide is told the slide is dark', () => {
@@ -911,28 +951,39 @@ function inspect(deck, where, fail) {
   }
 }
 
+// Both shapes, and both modes: a dark deck is checked exactly as hard as a
+// light one, because near-white on a deep ground is as easy to get wrong.
 for (const aspect of ['wide', 'standard']) {
-  test('generated decks on ' + aspect + ': nothing overflows, leaves the slide, collides or fails contrast', () => {
-    const bad = [];
-    for (let n = 0; n < 60; n++) {
-      const deck = generateDeck({ seed: aspect + '-' + n, aspect, title: 'A deck with a reasonably long name on it' });
-      // A footer makes the strip along the foot carry words, which is where a
-      // deck without one would never have found a contrast problem.
-      deck.options.footer = 'Company \u00b7 Confidential';
-      inspect(deck, aspect + ' seed ' + n, (m) => bad.push(m));
-    }
-    assert.deepStrictEqual(bad.slice(0, 8), [], bad.length + ' problems, first few:\n  ' + bad.slice(0, 8).join('\n  '));
-  });
+  for (const mode of ['light', 'dark']) {
+    test(mode + ' generated decks on ' + aspect + ': nothing overflows, leaves the slide, collides or fails contrast', () => {
+      const bad = [];
+      for (let n = 0; n < 50; n++) {
+        const deck = generateDeck({ seed: aspect + '-' + n, aspect, mode, title: 'A deck with a reasonably long name on it' });
+        assert.strictEqual(deck.options.mode, mode);
+        // A footer makes the strip along the foot carry words, which is where a
+        // deck without one would never have found a contrast problem.
+        deck.options.footer = 'Company \u00b7 Confidential';
+        inspect(deck, mode + ' ' + aspect + ' seed ' + n, (m) => bad.push(m));
+      }
+      assert.deepStrictEqual(bad.slice(0, 8), [], bad.length + ' problems, first few:\n  ' + bad.slice(0, 8).join('\n  '));
+    });
+  }
 }
 
-test('generated decks vary: palettes, title slides, panels and graphics', () => {
+test('generated decks vary: palettes, light and dark, title slides, panels and graphics', () => {
   const palettes = new Set();
   const titles = new Set();
   const panels = new Set();
   const graphics = new Set();
   const chrome = new Set();
+  const modes = new Set();
+  const covers = new Set();
+  const middles = new Set();
   for (let n = 0; n < 50; n++) {
     const deck = generateDeck({ seed: 'v' + n });
+    modes.add(deck.options.mode);
+    covers.add((deck.layouts.find((l) => l.kind === 'section').elements[0].style || {}).fill);
+    middles.add(deck.slides.map((s) => (layoutOf(deck, s.layout) || {}).kind).join('|'));
     palettes.add(deck.palette.name);
     const title = deck.layouts.find((l) => l.kind === 'title');
     titles.add(title.elements.map((e) => e.type + ':' + e.name).join('|'));
@@ -945,6 +996,9 @@ test('generated decks vary: palettes, title slides, panels and graphics', () => 
   assert.ok(titles.size >= 4, 'only ' + titles.size + ' kinds of title slide');
   assert.ok(panels.size >= 3, 'only ' + panels.size + ' panel styles');
   assert.ok(graphics.size >= 6, 'only ' + graphics.size + ' kinds of graphic: ' + [...graphics].join());
+  assert.deepStrictEqual([...modes].sort(), ['dark', 'light'], 'every deck is the same mode: ' + [...modes].join());
+  assert.ok(covers.size >= 2, 'every deck gives its section slides the same colour: ' + [...covers].join());
+  assert.ok(middles.size >= 4, 'only ' + middles.size + ' orders of slide to start from');
   assert.deepStrictEqual([...chrome].sort(), [false, true], 'every deck numbers its slides the same way');
 });
 

@@ -11,7 +11,7 @@
 //
 // No AI: a seeded random number generator and rules.
 
-import { resolveColor, mix } from './color.js';
+import { resolveColor, mix, contrast } from './color.js';
 import { ellipsePath } from './path.js';
 
 /**
@@ -117,12 +117,26 @@ export function newSeed() {
 function schemeColors(scheme, palette, surface) {
   const r = (role) => resolveColor(role, palette);
   const back = surface || r('paper');
+  // A soft tint is a colour mixed towards the surface until it is *just*
+  // visible on it, and "just visible" is a ratio rather than an amount: mixing
+  // four parts in five towards white leaves a pale blue anybody can see, and
+  // mixing four parts in five towards near-black leaves nothing at all.
+  const soften = (color, ratio) => {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (contrast(mix(color, back, mid), back) > ratio) lo = mid;
+      else hi = mid;
+    }
+    return mix(color, back, lo);
+  };
   switch (scheme) {
     case 'primary': return [r('primary'), mix(r('primary'), back, 0.3), mix(r('primary'), back, 0.55), mix(r('primary'), back, 0.78)];
     case 'accent': return [r('accent'), mix(r('accent'), back, 0.3), mix(r('accent'), back, 0.55), mix(r('accent'), back, 0.78)];
-    case 'soft': return [mix(r('primary'), back, 0.8), mix(r('secondary'), back, 0.75), mix(r('accent'), back, 0.72), mix(r('highlight'), back, 0.7)];
+    case 'soft': return [soften(r('primary'), 2), soften(r('secondary'), 1.9), soften(r('accent'), 1.8), soften(r('highlight'), 1.7)];
     case 'duo': return [r('primary'), r('accent'), mix(r('primary'), back, 0.5), mix(r('accent'), back, 0.5)];
-    case 'faint': return [mix(r('ink'), back, 0.86), mix(r('primary'), back, 0.88), mix(r('accent'), back, 0.9)];
+    case 'faint': return [soften(r('ink'), 1.22), soften(r('primary'), 1.2), soften(r('accent'), 1.18)];
     case 'ink': return [r('ink')];
     default: return [r('primary'), r('secondary'), r('accent'), r('highlight')];
   }

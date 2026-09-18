@@ -26,8 +26,11 @@ import { PALETTES } from '../shared/color.js';
 export function openDeckStyles(opts = {}) {
   let aspect = opts.aspect || 'wide';
   // null means "leave the colours to each style", which is what makes pressing
-  // G feel like shuffling a pack rather than recolouring one card.
+  // G feel like shuffling a pack rather than recolouring one card. The same
+  // goes for light and dark: left alone, roughly three styles in ten come back
+  // dark, and holding one asks for that kind and no other.
   let palette = null;
+  let mode = null;
   const history = [];
   let at = -1;
 
@@ -47,7 +50,7 @@ export function openDeckStyles(opts = {}) {
         sw.style.background = deck.palette[role];
         return sw;
       })),
-      h('span', deck.palette.name),
+      h('span', deck.palette.name + (deck.options.mode === 'dark' ? ' dark' : '')),
       h('span.dim', deck.fonts.heading === deck.fonts.body ? deck.fonts.heading : deck.fonts.heading + ' and ' + deck.fonts.body),
       h('span.spacer'),
       h('code.seed', { title: 'The seed this was made from. The same seed always makes the same style.' }, seed),
@@ -59,7 +62,7 @@ export function openDeckStyles(opts = {}) {
     // Going back and then forward again shows the same styles, not new ones.
     if (at < history.length - 1) { at++; return draw(); }
     const seed = newSeed();
-    history.push({ seed, deck: generateDeck({ seed, aspect, palette: palette || undefined, title: opts.title }) });
+    history.push({ seed, deck: generateDeck({ seed, aspect, palette: palette || undefined, mode: mode || undefined, title: opts.title }) });
     at = history.length - 1;
     return draw();
   };
@@ -83,7 +86,7 @@ export function openDeckStyles(opts = {}) {
       onclick: () => {
         const { seed, deck } = history[at];
         ctl.close();
-        opts.onUse(deck, seed, palette, aspect);
+        opts.onUse(deck, seed, palette, aspect, mode);
       },
     }, 'Use this one'),
   ];
@@ -104,6 +107,15 @@ export function openDeckStyles(opts = {}) {
         }, a.ratio))),
         h('span.dim', 'Colours'),
         paletteHold((v) => { palette = v; regenerate(); }, () => palette),
+        h('div.seg', [['', 'Any'], ['light', 'Light'], ['dark', 'Dark']].map(([id, label]) => h('button' + (id === (mode || '') ? '.on' : ''), {
+          title: id ? 'Only ' + label.toLowerCase() + ' styles' : 'Light styles and dark ones',
+          onclick: (e) => {
+            mode = id || null;
+            e.target.parentElement.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+            e.target.classList.add('on');
+            regenerate();
+          },
+        }, label))),
       ]),
       sheet,
       meta,
@@ -165,7 +177,7 @@ export function openSlideLayouts(opts = {}) {
   const grid = h('div.layout-grid');
 
   const more = () => {
-    options = generateSlideLayouts({ seed, kind, aspect: deck.aspect, palette: paletteKey, count: 6, offset });
+    options = generateSlideLayouts({ seed, kind, aspect: deck.aspect, palette: paletteKey, mode: deck.options.mode, count: 6, offset });
     offset += 6;
     clear(grid);
     for (const option of options) {
@@ -211,7 +223,7 @@ export function openSlideLayouts(opts = {}) {
  */
 export async function restyleDeck(deck, { onApply }) {
   const style = generateLayoutsFor({ seed: newSeed(), aspect: deck.aspect });
-  const next = { ...deck, layouts: style.layouts, palette: style.palette, fonts: style.fonts };
+  const next = { ...deck, layouts: style.layouts, palette: style.palette, fonts: style.fonts, options: { ...deck.options, mode: style.mode } };
   const { slides, carried, dropped } = rebaseSlides(deck, next, deck.slides);
   const said = (n, one, many) => (n === 1 ? '1 ' + one : n + ' ' + many);
   const yes = await confirmDialog({

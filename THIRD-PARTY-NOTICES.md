@@ -35,6 +35,10 @@ packaging scripts. Every one of those files says in its first lines which Newsx
 file it came from. Newsx's own icon set follows the drawing style of Prtclx's,
 also by the same author.
 
+The icons are drawn by `desktop/make-icons.mjs` from a few rounded rectangles,
+and written by the same PNG encoder the PDF writer uses. Nothing is borrowed to
+make them.
+
 ### Build tools (not distributed)
 
 | Tool | Licence | Used for |
@@ -42,7 +46,6 @@ also by the same author.
 | [PyInstaller](https://pyinstaller.org) | GPL-2.0 with a bootloader exception that permits distributing the programs it builds under any licence | The Windows and macOS apps |
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | Inno Setup License (permissive) | The Windows installer |
 | [fontTools](https://github.com/fonttools/fonttools) | MIT | Regenerating `web/shared/metrics.js` |
-| [electron](https://github.com/electron/electron) | MIT | Only `npm run icons`, which draws the icon files; not part of the app |
 
 ### Optional, when run from source
 

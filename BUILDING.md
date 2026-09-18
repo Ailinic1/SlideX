@@ -135,9 +135,18 @@ repository GitHub bills macOS minutes at ten times the Linux rate:
 ## The icon
 
 `desktop/icons/` holds the icon for each system - `icon.ico` (Windows),
-`icon.icns` (macOS, drawn on Apple's icon grid) and `linux/*.png` - all drawn
-from `assets/icon.svg`. After changing the mark, `npm run icons` draws them
-again; it borrows Electron for the drawing and needs a display.
+`icon.icns` (macOS) and `linux/*.png` - and `assets/icon.png` is the one the
+window and the page use. All of them are drawn from the same handful of
+rounded rectangles as `assets/icon.svg`. After changing the mark, `npm run
+icons` draws them all again:
+
+```bash
+npm run icons
+```
+
+It needs nothing installed and no display: a `.ico` and a `.icns` are, at the
+sizes that matter, containers of PNGs, and the PNG encoder is the one the PDF
+writer already has.
 
 ## Where the installed app keeps things
 

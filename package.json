@@ -26,7 +26,8 @@
     "test:ui": "node test/ui-test.js",
     "test:window": "python3 test/window-test.py",
     "dist:linux": "python3 desktop/package.py",
-    "test:guard": "node test/no-llm-test.js"
+    "test:guard": "node test/no-llm-test.js",
+    "icons": "node desktop/make-icons.mjs"
   },
   "engines": {
     "node": ">=18"

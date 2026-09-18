@@ -42,9 +42,16 @@ The first version.
 - Push, pull and history as in Newsx: bundles in a shared folder, a three-way
   merge that asks only about what both people changed, and a pull preview that
   draws the slides it changes.
-- Seven palettes by role, four pairings of the three PDF-standard faces, a line
-  icon set of more than a hundred drawings, fourteen kinds of chart and ten
-  kinds of generated graphic - all carried over from Newsx, with a header in
-  each file naming where it came from.
+- Seven palettes by role, each with a dark side of the same nine roles, four
+  pairings of the three PDF-standard faces, a line icon set of more than a
+  hundred drawings, fourteen kinds of chart and twenty-six kinds of generated
+  graphic - the palettes, faces, icons, charts and the first ten graphics
+  carried over from Newsx, with a header in each file naming where it came
+  from.
+- Light decks and dark ones. A dark palette is the same palette on a deep
+  ground that keeps its hue, so nothing but the nine roles changes and every
+  chart, graphic and element follows. Generated styles come back dark about
+  three times in ten, or only dark if you ask; a deck that already exists is
+  turned dark, and back, from Colours.
 - A window of its own through pywebview, or the browser.
 - A test that fails if anybody puts an AI in it.

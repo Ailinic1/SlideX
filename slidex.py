@@ -286,6 +286,13 @@ def main(argv=None):
             except (ImportError, ValueError):
                 webview = None
                 why_not = 'WebKitGTK is not installed (sudo apt install python3-gi gir1.2-webkit2-4.1)'
+        if webview and sys.platform.startswith('linux') and not (
+                os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+            # Asked here rather than left to GTK, which does not raise when it
+            # cannot open a display: it prints a warning and ends the process,
+            # so there would be nothing to catch and fall back from.
+            webview = None
+            why_not = 'there is no display here'
 
     if args.check:
         try:

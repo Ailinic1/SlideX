@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 
 import * as S from './lib/store.js';
 import * as repo from './lib/repo.js';
+import * as bundle from './lib/bundle.js';
 import { renderPdf, pdfFileName, PDF_LAYOUTS } from './lib/render.js';
 import { UserError, notFound } from './lib/errors.js';
 import { NAME, VERSION } from './lib/version.js';
@@ -191,7 +192,17 @@ route('GET', /^\/api\/pdf-layouts$/, (req, res) => json(res, Object.entries(PDF_
 
 route('POST', /^\/api\/decks\/([^/]+)\/push$/, async (req, res, [id]) => {
   const body = await readJson(req);
-  json(res, repo.push(id, { note: body.note, author: body.author }));
+  const result = repo.push(id, { note: body.note, author: body.author });
+  let shared = null;
+  if (!result.unchanged || body.shareAnyway) {
+    try {
+      shared = bundle.publishToFolder(id, body.folder);
+    } catch (e) {
+      // The version is safe whatever happened to the copy; say what did.
+      shared = { copied: false, reason: 'error', message: e.message };
+    }
+  }
+  json(res, { ...result, shared });
 });
 route('GET', /^\/api\/decks\/([^/]+)\/history$/, (req, res, [id]) => json(res, repo.history(id)));
 route('GET', /^\/api\/decks\/([^/]+)\/versions\/([a-f0-9]{16})$/, (req, res, [id, vid]) => json(res, repo.versionDetail(id, vid)));
@@ -205,6 +216,26 @@ route('POST', /^\/api\/decks\/([^/]+)\/pull\/([a-f0-9]{16})$/, async (req, res, 
   const body = await readJson(req);
   json(res, repo.pull(id, vid, { resolutions: body.resolutions || {}, note: body.note }));
 });
+
+route('GET', /^\/api\/decks\/([^/]+)\/exchange$/, (req, res, [id], url) => json(res, bundle.scanFolder(id, url.searchParams.get('folder'))));
+route('POST', /^\/api\/decks\/([^/]+)\/exchange\/import$/, async (req, res, [id]) => {
+  const body = await readJson(req);
+  json(res, bundle.importBundle(bundle.readBundleFile(body.file), { deckId: id }));
+});
+route('POST', /^\/api\/decks\/([^/]+)\/bundle$/, async (req, res, [id]) => {
+  const buf = await readBody(req);
+  const info = bundle.inspectBundle(buf);
+  if (info.manifest.deckId !== id) {
+    throw new UserError('That bundle is for \u201c' + info.manifest.deckName + '\u201d, not this deck. Open it from the start page instead.');
+  }
+  json(res, bundle.importBundle(buf, { deckId: id }));
+});
+route('GET', /^\/api\/decks\/([^/]+)\/bundle$/, (req, res, [id]) => {
+  const { buffer, fileName } = bundle.exportBundle(id);
+  attachment(res, buffer, fileName, 'application/zip');
+});
+route('POST', /^\/api\/import$/, async (req, res) => json(res, bundle.importBundle(await readBody(req)), 201));
+route('POST', /^\/api\/inspect-bundle$/, async (req, res) => json(res, bundle.inspectBundle(await readBody(req))));
 
 route('POST', /^\/api\/reveal$/, async (req, res) => {
   const body = await readJson(req);

@@ -1,0 +1,13 @@
+# The native window. Everything else in SlideX has no dependencies at
+# all, and this one is optional: without it the program opens in a browser and
+# behaves identically.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#   ./SlideX.sh      (or just run it: it does the two lines above itself)
+#
+# On Linux the window is WebKitGTK, which comes from the system rather than
+# from pip:  sudo apt install gir1.2-webkit2-4.1
+# On Windows it is Edge WebView2, and on macOS it is the system WebKit; neither
+# needs installing.
+pywebview>=5

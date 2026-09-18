@@ -15,6 +15,7 @@ import { resolveSlide, numbering, ASPECTS } from '../shared/model.js';
 import { PALETTES } from '../shared/color.js';
 import { mountEditor, editorRibbon, editorStatus } from './editor.js';
 import { openDeckStyles } from './generated.js';
+import { openSharedDeck } from './versions.js';
 
 export const state = {
   view: 'start',        // 'start' | 'editor'
@@ -183,6 +184,7 @@ function renderStart(host) {
     h('div.start-head', [
       h('h1', 'Your decks'),
       h('div.start-actions', [
+        h('button.btn.ghost', { onclick: () => openSharedDeck(() => showStart()) }, 'Open a shared deck\u2026'),
         h('button.btn', { onclick: generateNewDeck }, 'Generate a style\u2026'),
         h('button.btn.primary', { onclick: newDeck }, 'New deck'),
       ]),
@@ -452,6 +454,22 @@ function openSettings() {
           onchange: async (e) => { state.config = await api.setConfig({ user: { name: e.target.value } }); },
         }),
         h('div.hint', 'Who a shared version says it came from.'),
+      ]),
+      h('div.field', [
+        h('label', 'Shared folder'),
+        h('input.input', {
+          value: state.config.sharedFolder || '',
+          placeholder: 'A folder that syncs itself: SharePoint, OneDrive, Dropbox',
+          onchange: async (e) => {
+            try {
+              state.config = await api.setConfig({ sharedFolder: e.target.value.trim() });
+              toast('Shared folder set', 'A push will copy the deck and a PDF into it.', 'ok', 5000);
+            } catch (err) {
+              toast('That folder could not be used', err.message, 'bad');
+            }
+          },
+        }),
+        h('div.hint', 'A push drops a .sxbundle and a PDF in here; a pull reads your colleagues\u2019 bundles out of it. Nothing else ever leaves this computer.'),
       ]),
       h('div.field', [
         h('label', 'Where your decks are'),

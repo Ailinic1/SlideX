@@ -72,6 +72,13 @@ export const api = {
   pullPreview: (id, vid) => get(D(id) + '/pull/' + vid),
   pull: (id, vid, body) => post(D(id) + '/pull/' + vid, body || {}),
 
+  exchange: (id, folder) => get(D(id) + '/exchange' + (folder ? '?folder=' + encodeURIComponent(folder) : '')),
+  importFromFolder: (id, file) => post(D(id) + '/exchange/import', { file }),
+  importBundleInto: (id, blob) => upload(D(id) + '/bundle', blob),
+  bundleUrl: (id) => D(id) + '/bundle',
+  importNew: (blob) => upload('/api/import', blob),
+  inspectBundle: (blob) => upload('/api/inspect-bundle', blob),
+
   reveal: (body) => post('/api/reveal', body),
   browse: (path) => get('/api/browse' + (path ? '?path=' + encodeURIComponent(path) : '')),
 };

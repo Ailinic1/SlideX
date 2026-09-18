@@ -136,12 +136,21 @@ test('nothing reaches the internet at all', () => {
 });
 
 test('every address in the source is either this machine or a link in prose', () => {
+  // Only this machine, the XML namespace an SVG has to name, and the handful
+  // of places the documentation tells somebody to go and get something. Every
+  // one of these is a link a person clicks, never an address the program
+  // fetches: nothing in src/ or web/ asks any of them for anything, which the
+  // test above is what proves.
   const allowed = [
     /^https?:\/\/127\.0\.0\.1/, /^https?:\/\/localhost/,
-    // Links a person clicks, in documentation.
-    /^https:\/\/github\.com\//, /^https:\/\/nodejs\.org/, /^https:\/\/pywebview\.flowrey\.dev/,
-    /^https:\/\/jrsoftware\.org/, /^https:\/\/pyinstaller\.org/, /^https:\/\/opensource\.org/,
-    /^https:\/\/www\.w3\.org\//, /^http:\/\/www\.w3\.org\//, /^https:\/\/claude\.com\//,
+    /^https?:\/\/www\.w3\.org\//,
+    /^https:\/\/github\.com\//,
+    /^https:\/\/nodejs\.org/,
+    /^https:\/\/www\.python\.org/,
+    /^https:\/\/pywebview\.flowrey\.dev/,
+    /^https:\/\/bottlepy\.org/,
+    /^https:\/\/pyinstaller\.org/,
+    /^https:\/\/jrsoftware\.org/,
   ];
   const hits = [];
   for (const file of FILES) {

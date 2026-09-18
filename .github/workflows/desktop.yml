@@ -1,0 +1,85 @@
+# Builds the desktop installers for Linux, Windows and macOS on GitHub's own
+# machines. See BUILDING.md.
+#
+# Every one of them is the pywebview app: slidex.py around the local server,
+# with an official Node brought along. It runs only when started by hand -
+# Actions > Desktop installers > Run workflow - because on a private repository
+# GitHub bills macOS minutes at ten times the Linux rate.
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 desktop/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SlideX-Linux
+          if-no-files-found: error
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/install-slidex.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pyinstaller -r requirements.txt
+      - run: python desktop/fetch-node.py win-x64
+      - run: python -m PyInstaller --noconfirm --distpath dist/pyinstaller --workpath build/pyinstaller desktop/pyinstaller/slidex.spec
+      - name: Installer and portable zip
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" desktop\windows\slidex.iss
+          Compress-Archive -Path dist\pyinstaller\SlideX -DestinationPath "dist\SlideX-$version-windows-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SlideX-Windows
+          if-no-files-found: error
+          path: |
+            dist/SlideX-Setup-*.exe
+            dist/SlideX-*-windows-portable.zip
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            node: darwin-arm64
+            arch: arm64
+          - runner: macos-13
+            node: darwin-x64
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install pyinstaller -r requirements.txt
+      - run: python3 desktop/fetch-node.py ${{ matrix.node }}
+      - run: python3 -m PyInstaller --noconfirm --distpath dist/pyinstaller --workpath build/pyinstaller desktop/pyinstaller/slidex.spec
+      - name: Sign ad hoc and make the disk image
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('package.json'))['version'])")
+          codesign --force --deep --sign - dist/pyinstaller/SlideX.app
+          mkdir -p dmg && cp -R dist/pyinstaller/SlideX.app dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "SlideX $version" -srcfolder dmg -ov -format UDZO "dist/SlideX-$version-mac-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SlideX-mac-${{ matrix.arch }}
+          if-no-files-found: error
+          path: dist/*.dmg

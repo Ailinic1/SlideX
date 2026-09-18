@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .venv/
+.venv.setup-failed
 __pycache__/
 # Written by `npm run test:ui`.
 assets/screens/

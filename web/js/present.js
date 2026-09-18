@@ -49,6 +49,8 @@ export function startPresenting(opts) {
   const startedAt = Date.now();
 
   const root = h('div.present');
+  // The shape of this deck's slides, for the CSS that sizes them.
+  root.style.setProperty('--slide-ratio', String(deck.size.width / deck.size.height));
   const stage = h('div.present-stage');
   const hint = h('div.present-hint');
   const typedBox = h('div.present-typed');
@@ -75,7 +77,9 @@ export function startPresenting(opts) {
   let showing = null;
   function draw(direction) {
     const slide = running[at];
-    const move = transitionOf(slide);
+    // The first slide does not animate: there is nothing for it to come from,
+    // and a talk that opens on a fade from black opens on nothing at all.
+    const move = showing ? transitionOf(slide) : 'none';
     const next = h('div.present-slide' + (move !== 'none' ? '.enter-' + move + (direction < 0 ? '-back' : '') : ''));
     next.innerHTML = svgFor(slide);
     // Only the slide leaving and the slide arriving are ever in the page; a

@@ -23,13 +23,14 @@ import { openSlideLayouts, restyleDeck } from './generated.js';
 import { startPresenting } from './present.js';
 import { openCheck } from './check.js';
 import { exportPdf, exportPng } from './export.js';
+import { push, openPull, openHistory } from './versions.js';
 import {
   resolveSlide, resolveLayout, numbering, sectionsOf, layoutOf, makeSlide, makeElement,
   moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone, rebaseSlides,
   ELEMENT_TYPES, FIELD_KINDS, LAYOUT_KINDS, ASPECTS, FONT_PAIRINGS, applyFonts,
 } from '../shared/model.js';
 import { parseTable } from '../shared/charts.js';
-import { ribBtn, ribGroup, render, markDirty, refreshChrome, state as app, setEditorMount, deck } from './app.js';
+import { ribBtn, ribGroup, render, markDirty, refreshChrome, saveNow, state as app, setEditorMount, deck } from './app.js';
 
 /** What the editor is looking at. */
 export const ed = {
@@ -974,6 +975,7 @@ function installKeyboard() {
       if (k === 'd') { e.preventDefault(); return ed.picked.length ? (copySelection(false), pasteClipboard()) : duplicateCurrent(); }
       if (k === 'm') { e.preventDefault(); return addSlide(); }
       if (k === 'p') { e.preventDefault(); return exportPdf({ deck: deck(), deckId: app.open.record.id }); }
+      if (k === 's') { e.preventDefault(); return doPush(); }
       if (k === 'a') { e.preventDefault(); ed.picked = shownElements().map((x) => x.id); ed.canvas.select(ed.picked); return paintInspectorNow(); }
       if (k === ']') { e.preventDefault(); return reorderElements('front'); }
       if (k === '[') { e.preventDefault(); return reorderElements('back'); }
@@ -1120,6 +1122,11 @@ export function editorRibbon() {
       ribGroup('Before you send it', [
         ribBtn('Check', 'checklist', runCheck, { title: 'Everything that will not look right, worst first' }),
       ]),
+      ribGroup('Share', [
+        ribBtn('Push', 'push', doPush, { title: 'Ctrl+S \u00b7 freeze this as a version and copy it into your shared folder' }),
+        ribBtn('Pull', 'pull', doPull, { small: true }),
+        ribBtn('History', 'history', doHistory, { small: true }),
+      ]),
       ribGroup('Export', [
         ribBtn('PDF', 'pdf', () => exportPdf({ deck: d, deckId: app.open.record.id }), { title: 'Ctrl+P' }),
         ribBtn('PNG', 'image', () => exportPng({ deck: d, deckId: app.open.record.id, assets: app.open.assets, slideId: ed.current }), { small: true }),
@@ -1168,6 +1175,40 @@ function runCheck() {
       }
     },
   });
+}
+
+const shareOpts = () => ({
+  deckId: app.open.record.id,
+  deck: deck(),
+  assets: app.open.assets,
+  assetUrl: (sha) => api.assetUrl(app.open.record.id, sha),
+});
+
+async function doPush() {
+  // Everything typed since the last keystroke goes into the version, not the
+  // one before it.
+  await saveNow(true);
+  push({ ...shareOpts(), onDone: () => { app.open.unpushed = false; refreshChrome(); } });
+}
+
+function doPull() {
+  openPull({ ...shareOpts(), onDone: reopen, onSettings: () => toast('Settings', 'Choose the shared folder in Settings, at the top right.', '', 6000) });
+}
+
+function doHistory() {
+  openHistory({ ...shareOpts(), onDone: reopen });
+}
+
+/** After a pull or a restore the deck on disk is not the one in this window. */
+async function reopen() {
+  const fresh = await api.getDeck(app.open.record.id);
+  app.open = fresh;
+  snapshotNow();
+  ed.picked = [];
+  const ids = new Set(fresh.working.deck.slides.map((s) => s.id));
+  if (!ids.has(ed.current)) ed.current = fresh.working.deck.slides[0] ? fresh.working.deck.slides[0].id : null;
+  ed.selection = ed.current ? [ed.current] : [];
+  render();
 }
 
 function chooseLayout() {
@@ -1412,6 +1453,9 @@ provideCommands(() => {
     cmd('Check the deck', 'checklist', runCheck),
     cmd('Export a PDF', 'pdf', () => exportPdf({ deck: d, deckId: app.open.record.id }), 'Ctrl+P'),
     cmd('Export the slides as PNG', 'image', () => exportPng({ deck: d, deckId: app.open.record.id, assets: app.open.assets, slideId: ed.current })),
+    cmd('Push', 'push', doPush, 'Ctrl+S'),
+    cmd('Pull', 'pull', doPull),
+    cmd('History', 'history', doHistory),
     cmd('Change the slide shape', 'columns', chooseAspect),
     cmd('Deck settings', 'gear', deckSettings),
     cmd('Shuffle the generated graphics', 'shuffle', shuffleAll),

@@ -37,8 +37,8 @@ What each system needs already there:
 On Linux Mint or Ubuntu, with Python 3 and an internet connection:
 
 ```bash
-git clone https://github.com/Ailinic1/Slidex.git
-cd Slidex
+git clone https://github.com/Ailinic1/SlideX.git
+cd SlideX
 python3 desktop/package.py        # or: npm run dist:linux
 ```
 

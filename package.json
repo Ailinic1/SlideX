@@ -10,10 +10,10 @@
     "email": "ailinic1@users.noreply.github.com"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Ailinic1/Slidex",
+  "homepage": "https://github.com/Ailinic1/SlideX",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Ailinic1/Slidex.git"
+    "url": "https://github.com/Ailinic1/SlideX.git"
   },
   "bin": {
     "slidex": "src/server.js"

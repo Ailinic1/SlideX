@@ -244,7 +244,7 @@ def make_deb(app, path, bundled_node):
                 'Maintainer: Arseniy A. Ilinich <ailinic1@users.noreply.github.com>',
                 'Depends: ' + ', '.join(depends),
                 'Installed-Size: ' + str(size_kb),
-                'Homepage: https://github.com/Ailinic1/Slidex',
+                'Homepage: https://github.com/Ailinic1/SlideX',
                 'Description: Offline presentation editor',
                 ' Slides that renumber themselves the moment they are moved, deck styles',
                 ' generated from a seed by rules, charts, icons and generated graphics,',

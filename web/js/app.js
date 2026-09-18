@@ -14,6 +14,7 @@ import { thumb, slideContext } from './slides.js';
 import { resolveSlide, numbering, ASPECTS } from '../shared/model.js';
 import { PALETTES } from '../shared/color.js';
 import { mountEditor, editorRibbon, editorStatus } from './editor.js';
+import { openDeckStyles } from './generated.js';
 
 export const state = {
   view: 'start',        // 'start' | 'editor'
@@ -182,6 +183,7 @@ function renderStart(host) {
     h('div.start-head', [
       h('h1', 'Your decks'),
       h('div.start-actions', [
+        h('button.btn', { onclick: generateNewDeck }, 'Generate a style\u2026'),
         h('button.btn.primary', { onclick: newDeck }, 'New deck'),
       ]),
     ]),
@@ -190,7 +192,10 @@ function renderStart(host) {
     page.append(h('div.empty-state', [
       h('h2', 'Nothing here yet'),
       h('p', 'A deck is slides, the layouts they share, and a palette. Make one, and the first slide opens straight away.'),
-      h('button.btn.primary', { onclick: newDeck }, 'New deck'),
+      h('div.row', { style: { flex: '0 0 auto', justifyContent: 'center' } }, [
+        h('button.btn', { onclick: generateNewDeck }, 'Generate a style\u2026'),
+        h('button.btn.primary', { onclick: newDeck }, 'New deck'),
+      ]),
     ]));
   } else {
     page.append(h('div.deck-grid', state.decks.map(deckCard)));
@@ -320,6 +325,33 @@ function newDeck() {
     ],
   });
   return c;
+}
+
+/**
+ * Not sure what the deck should look like? This is the first thing on the
+ * start page: a whole style drawn by rules from a seed, and another, and
+ * another, until one of them is right.
+ */
+function generateNewDeck() {
+  openDeckStyles({
+    title: 'Untitled deck',
+    onUse: async (generated, seed, palette, aspect) => {
+      const name = await promptDialog({
+        title: 'What is the deck called?',
+        label: 'Name',
+        value: 'Untitled deck',
+        hint: 'The style you chose was made from the seed ' + seed + ', and is kept with the deck.',
+        confirmLabel: 'Make it',
+      });
+      if (name == null) return;
+      try {
+        const made = await api.createDeck({ name: name.trim() || 'Untitled deck', starter: 'generated', seed, aspect, palette: palette || undefined });
+        await openDeck(made.record.id);
+      } catch (e) {
+        toast('Could not make the deck', e.message, 'bad');
+      }
+    },
+  });
 }
 
 /* --------------------------------------------------------------- editor */

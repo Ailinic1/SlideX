@@ -14,11 +14,12 @@ import { buildStarter, buildLayouts, STARTERS } from '../web/shared/starters.js'
 import {
   makeDeck, makeSlide, makeElement, resolveSlide, resolveLayout, layoutOf,
   moveSlides, insertSlides, duplicateSlides, removeSlides, referencesIn,
-  fillFields, agendaText, rebaseSlides, newId, clone,
+  fillFields, agendaText, rebaseSlides, newId, clone, LAYOUT_KINDS,
 } from '../web/shared/model.js';
 import { numbering, slideTitle, sectionsOf, resolveReference } from '../web/shared/numbering.js';
-import { renderSlide } from '../web/shared/scene.js';
+import { renderSlide, contrastOf } from '../web/shared/scene.js';
 import { renderSVG } from '../web/shared/svg.js';
+import { generateDeck, generateSlideLayouts, generateLayoutsFor, contrastFloor, LAYOUT_VARIANTS } from '../web/shared/generate.js';
 
 /* ---------------------------------------------------------------- fonts */
 
@@ -655,4 +656,246 @@ test('what has nowhere to go is counted before anything moves', () => {
   assert.strictEqual(dropped, 1);
 });
 
-await run('SlideX: numbering, the slide engine, charts and graphics');
+/* ------------------------------------------------------------- generator */
+
+/**
+ * A deck with its ids replaced by the order they first appear in.
+ *
+ * Ids are fresh every time something is made, and have to be: two decks in one
+ * folder cannot share them. So comparing two decks made from one seed means
+ * comparing everything except the ids - and comparing the ids' *structure*,
+ * which this keeps: two slides pointing at the same layout still point at the
+ * same layout afterwards.
+ */
+function canonical(value) {
+  const ids = new Set();
+  const collect = (v) => {
+    if (Array.isArray(v)) return v.forEach(collect);
+    if (!v || typeof v !== 'object') return undefined;
+    for (const [k, x] of Object.entries(v)) {
+      if (k === 'id' && typeof x === 'string') ids.add(x);
+      if (k === 'overrides' && x && typeof x === 'object') for (const key of Object.keys(x)) ids.add(key);
+      collect(x);
+    }
+    return undefined;
+  };
+  collect(value);
+  const seen = new Map();
+  const nameOf = (v) => {
+    if (!seen.has(v)) seen.set(v, '#' + seen.size);
+    return seen.get(v);
+  };
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== 'object') return typeof v === 'string' && ids.has(v) ? nameOf(v) : v;
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[ids.has(k) ? nameOf(k) : k] = walk(x);
+    return out;
+  };
+  return walk(JSON.parse(JSON.stringify(value)));
+}
+
+const withoutIds = (v) => JSON.parse(JSON.stringify(v, (k, x) => (k === 'id' || k === 'seed' ? undefined : x)));
+
+test('a generated deck is the same for the same seed, and different for another', () => {
+  // Everything but the ids, and that includes every graphic's seed: one seed
+  // makes one deck, down to the last dot of the last generated graphic.
+  assert.deepStrictEqual(canonical(generateDeck({ seed: 'abc' })), canonical(generateDeck({ seed: 'abc' })));
+  assert.notDeepStrictEqual(canonical(generateDeck({ seed: 'abc' })), canonical(generateDeck({ seed: 'abd' })));
+  const seeds = (deck) => JSON.stringify(canonical(deck)).match(/"seed":"[^"]+"/g);
+  assert.ok(seeds(generateDeck({ seed: 'abc' })).length > 0, 'a generated deck has no graphics at all');
+  assert.deepStrictEqual(seeds(generateDeck({ seed: 'abc' })), seeds(generateDeck({ seed: 'abc' })));
+  assert.notDeepStrictEqual(seeds(generateDeck({ seed: 'abc' })), seeds(generateDeck({ seed: 'abd' })));
+  // And the same deck on a different machine: it is only JSON.
+  const there = JSON.parse(JSON.stringify(generateDeck({ seed: 'abc' })));
+  assert.deepStrictEqual(canonical(there), canonical(generateDeck({ seed: 'abc' })));
+});
+
+test('a held palette and shape are kept, and the seed is recorded', () => {
+  const deck = generateDeck({ seed: 'held', palette: 'meadow', aspect: 'standard', title: 'Held' });
+  assert.strictEqual(deck.palette.name, 'Meadow');
+  assert.strictEqual(deck.aspect, 'standard');
+  assert.strictEqual(deck.size.width, 720);
+  assert.strictEqual(deck.generated.seed, 'held');
+  // Twenty seeds, one palette: the palette is held while the layouts change.
+  for (let n = 0; n < 20; n++) {
+    assert.strictEqual(generateDeck({ seed: 'hold' + n, palette: 'cardinal' }).palette.name, 'Cardinal');
+  }
+});
+
+// The quality checks. Anything a person would notice and we would be
+// embarrassed by: words cut off, a box off the slide, two things on top of
+// each other, or text nobody can read on what is behind it.
+const BACKGROUND = new Set(['shape', 'pattern', 'image']);
+const overlaps = (a, b) => a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5;
+const WORDS_ON = new Set(['text', 'field', 'reference', 'agenda']);
+
+function inspect(deck, where, fail) {
+  const nums = numbering(deck);
+  for (const layout of deck.layouts) {
+    const slide = deck.slides.find((s) => s.layout === layout.id);
+    const shown = slide ? resolveSlide(deck, slide) : resolveLayout(deck, layout);
+    const at = where + ' \u00b7 ' + layout.name;
+    const drawn = renderSlide(shown, { deck, slide: slide || null, numbers: nums, draft: false });
+
+    for (const [id, note] of Object.entries(drawn.report)) {
+      const el = shown.elements.find((e) => e.id === id) || {};
+      const name = at + ' \u00b7 ' + (el.name || id);
+      if (note.overflow) fail(name + ': ' + (note.hiddenWords || 'some') + ' words do not fit');
+      if (note.error) fail(name + ' could not be drawn: ' + note.error);
+      if (note.clipped) fail(name + ' had to be cut');
+      if (note.tiny) fail(name + ' shrank to ' + note.tiny + 'pt, which nobody can read');
+      if (note.shrunk && note.shrunk < 70) fail(name + ' shrank to ' + note.shrunk + '% of its size');
+    }
+
+    for (const el of shown.elements) {
+      const name = at + ' \u00b7 ' + el.name;
+      if (el.x < -0.5 || el.y < -0.5) fail(name + ' starts off the slide');
+      if (el.x + el.w > deck.size.width + 0.5 || el.y + el.h > deck.size.height + 0.5) fail(name + ' runs off the slide');
+      if (el.w < 2 || el.h < 2) fail(name + ' has no size');
+    }
+
+    // Two things on top of each other. Backgrounds are meant to be underneath
+    // things, so they are not counted.
+    const front = shown.elements.filter((e) => !BACKGROUND.has(e.type));
+    for (let a = 0; a < front.length; a++) {
+      for (let b = a + 1; b < front.length; b++) {
+        if (overlaps(front[a], front[b])) fail(at + ': ' + front[a].name + ' overlaps ' + front[b].name);
+      }
+    }
+
+    // Words on whatever is behind them, at the ratio that size actually needs.
+    for (const el of shown.elements) {
+      if (!WORDS_ON.has(el.type)) continue;
+      const c = contrastOf(shown.elements, el, deck.palette);
+      if (!c) continue;
+      const floor = contrastFloor(Number(el.style.size) || 17, !!el.style.bold);
+      if (c.ratio < floor) {
+        fail(at + ' \u00b7 ' + el.name + ': contrast ' + c.ratio.toFixed(2) + ' on ' + c.on + ', needs ' + floor);
+      }
+    }
+  }
+}
+
+for (const aspect of ['wide', 'standard']) {
+  test('generated decks on ' + aspect + ': nothing overflows, leaves the slide, collides or fails contrast', () => {
+    const bad = [];
+    for (let n = 0; n < 60; n++) {
+      const deck = generateDeck({ seed: aspect + '-' + n, aspect, title: 'A deck with a reasonably long name on it' });
+      // A footer makes the strip along the foot carry words, which is where a
+      // deck without one would never have found a contrast problem.
+      deck.options.footer = 'Company \u00b7 Confidential';
+      inspect(deck, aspect + ' seed ' + n, (m) => bad.push(m));
+    }
+    assert.deepStrictEqual(bad.slice(0, 8), [], bad.length + ' problems, first few:\n  ' + bad.slice(0, 8).join('\n  '));
+  });
+}
+
+test('generated decks vary: palettes, title slides, panels and graphics', () => {
+  const palettes = new Set();
+  const titles = new Set();
+  const panels = new Set();
+  const graphics = new Set();
+  const chrome = new Set();
+  for (let n = 0; n < 50; n++) {
+    const deck = generateDeck({ seed: 'v' + n });
+    palettes.add(deck.palette.name);
+    const title = deck.layouts.find((l) => l.kind === 'title');
+    titles.add(title.elements.map((e) => e.type + ':' + e.name).join('|'));
+    const comparison = deck.layouts.find((l) => l.kind === 'comparison');
+    panels.add(JSON.stringify((comparison.elements.find((e) => e.name === 'Left panel') || { style: {} }).style));
+    for (const l of deck.layouts) for (const e of l.elements) if (e.type === 'pattern') graphics.add(e.style.kind);
+    chrome.add(deck.layouts.find((l) => l.kind === 'titleContent').elements.some((e) => e.name === 'Slide number'));
+  }
+  assert.ok(palettes.size >= 6, 'only ' + palettes.size + ' palettes: ' + [...palettes].join());
+  assert.ok(titles.size >= 4, 'only ' + titles.size + ' kinds of title slide');
+  assert.ok(panels.size >= 3, 'only ' + panels.size + ' panel styles');
+  assert.ok(graphics.size >= 6, 'only ' + graphics.size + ' kinds of graphic: ' + [...graphics].join());
+  assert.deepStrictEqual([...chrome].sort(), [false, true], 'every deck numbers its slides the same way');
+});
+
+test('a generated deck has every layout, and a slide to start from', () => {
+  const deck = generateDeck({ seed: 'complete', title: 'Complete' });
+  const kinds = deck.layouts.map((l) => l.kind);
+  for (const kind of Object.keys(LAYOUT_KINDS)) assert.ok(kinds.includes(kind), 'no ' + kind + ' layout');
+  assert.ok(deck.slides.length >= 5);
+  assert.deepStrictEqual(numbersOf(deck), deck.slides.map((_, i) => i + 1));
+  // The layouts a starting slide uses are the ones somebody opens on.
+  const used = deck.slides.map((s) => (layoutOf(deck, s.layout) || {}).kind);
+  assert.strictEqual(used[0], 'title');
+  assert.strictEqual(used[used.length - 1], 'closing');
+  assert.ok(deck.sections.length >= 1);
+});
+
+test('six layouts for one slide, then six more, all different and all sound', () => {
+  const first = generateSlideLayouts({ seed: 'six', kind: 'titleContent', palette: 'harbor', count: 6 });
+  const more = generateSlideLayouts({ seed: 'six', kind: 'titleContent', palette: 'harbor', count: 6, offset: 6 });
+  assert.strictEqual(first.length, 6);
+  assert.strictEqual(more.length, 6);
+  const shape = (o) => JSON.stringify(withoutIds(o.layout));
+  assert.strictEqual(new Set([...first, ...more].map(shape)).size, 12, 'two of the twelve are the same');
+  // Asking again gives the same six: a layout somebody liked can be found again.
+  assert.deepStrictEqual(first.map(shape), generateSlideLayouts({ seed: 'six', kind: 'titleContent', palette: 'harbor', count: 6 }).map(shape));
+  // Held palette means held palette, for every one of them.
+  const host = generateDeck({ seed: 'host', palette: 'harbor' });
+  for (const option of [...first, ...more]) {
+    assert.strictEqual(option.layout.kind, 'titleContent');
+    const bad = [];
+    inspect({ ...host, layouts: [option.layout], slides: [] }, 'option ' + option.layout.name, (m) => bad.push(m));
+    assert.deepStrictEqual(bad, [], bad.join('\n  '));
+  }
+});
+
+test('every kind of layout can be generated in every one of its variants', () => {
+  for (const palette of Object.keys(PALETTES)) {
+    const host = generateDeck({ seed: 'variants', palette });
+    for (const [kind, variants] of Object.entries(LAYOUT_VARIANTS)) {
+      // The options are generated in the deck's own colours, which is what
+      // "hold this palette while I try layouts" means.
+      const options = generateSlideLayouts({ seed: 'variants', kind, palette, count: variants.length });
+      assert.strictEqual(options.length, variants.length);
+      const bad = [];
+      for (const option of options) {
+        inspect({ ...host, layouts: [option.layout], slides: [] }, palette + ' ' + kind, (m) => bad.push(m));
+      }
+      assert.deepStrictEqual(bad, [], kind + ':\n  ' + bad.join('\n  '));
+    }
+  }
+});
+
+test('a new generated style carries a deck onto it, and one undo puts it back', () => {
+  const deck = generateDeck({ seed: 'before', title: 'A deck' });
+  const content = deck.slides.find((s) => (layoutOf(deck, s.layout) || {}).kind === 'titleContent');
+  const layout = layoutOf(deck, content.layout);
+  const title = layout.elements.find((e) => e.name === 'Title');
+  content.overrides[title.id] = { content: { text: 'What we found' } };
+  const before = JSON.stringify(deck);
+
+  const style = generateLayoutsFor({ seed: 'after', aspect: deck.aspect });
+  const after = { ...deck, layouts: style.layouts, palette: style.palette, fonts: style.fonts };
+  const { slides, carried, dropped } = rebaseSlides(deck, after, deck.slides);
+  after.slides = slides;
+  // You are told how much moves and how much has nowhere to go, before it does.
+  assert.ok(carried >= 1, 'nothing was carried');
+  assert.strictEqual(typeof dropped, 'number');
+  const moved = after.slides.find((s) => (layoutOf(after, s.layout) || {}).kind === 'titleContent');
+  const newTitle = layoutOf(after, moved.layout).elements.find((e) => e.name === 'Title');
+  assert.strictEqual(moved.overrides[newTitle.id].content.text, 'What we found');
+  assert.deepStrictEqual(numbersOf(after), after.slides.map((_, i) => i + 1));
+  const bad = [];
+  inspect(after, 'after', (m) => bad.push(m));
+  assert.deepStrictEqual(bad, [], bad.join('\n  '));
+
+  // One undo is the whole deck as it was.
+  assert.strictEqual(JSON.stringify(JSON.parse(before)), before);
+});
+
+test('a generated deck draws the same twice, and its graphics survive a round trip', () => {
+  const deck = generateDeck({ seed: 'stable', title: 'Stable' });
+  const draw = (d) => d.slides.map((s) => JSON.stringify(renderSlide(resolveSlide(d, s), { deck: d, slide: s, draft: false }).ops));
+  const once = draw(deck);
+  const again = draw(JSON.parse(JSON.stringify(deck)));
+  assert.deepStrictEqual(once, again, 'a deck drawn from its own file differs from the deck in memory');
+});
+
+await run('SlideX: numbering, the slide engine, charts, graphics and the generator');

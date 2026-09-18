@@ -24,6 +24,7 @@ import * as S from './store.js';
 import { UserError, notFound } from './errors.js';
 import { imageSize } from './images.js';
 import { buildStarter, STARTERS } from '../../web/shared/starters.js';
+import { generateDeck } from '../../web/shared/generate.js';
 import { merge3, describeChanges, deepEqual, describePath } from '../../web/shared/merge.js';
 
 const MAX_ASSET = 25 * 1024 * 1024;
@@ -112,10 +113,16 @@ export function createDeck(opts = {}) {
   const name = String(opts.name || '').trim();
   if (!name) throw new UserError('Give the deck a name.');
   if (name.length > 120) throw new UserError('That name is too long for a title slide.');
-  if (opts.starter && !STARTERS[opts.starter]) throw new UserError('There is no starter called that.');
+  const generated = opts.starter === 'generated';
+  if (opts.starter && !generated && !STARTERS[opts.starter]) throw new UserError('There is no starter called that.');
+  if (generated && !/^[\w-]{1,40}$/.test(String(opts.seed || ''))) throw new UserError('A generated style needs the seed it was generated from.');
   S.ensureDir(S.paths.decks());
   const id = S.uniqueSlug(S.paths.decks(), name);
-  const deck = buildStarter(opts.starter || 'plain', { palette: opts.palette, aspect: opts.aspect, title: name });
+  // A generated style is made again here from its seed, so the deck on the
+  // server is the one that was on screen, element for element.
+  const deck = generated
+    ? generateDeck({ seed: opts.seed, aspect: opts.aspect, palette: opts.palette || undefined, title: name })
+    : buildStarter(opts.starter || 'plain', { palette: opts.palette, aspect: opts.aspect, title: name });
   deck.title = name;
   const now = S.nowIso();
   const record = { id, name, createdAt: now, updatedAt: now, starter: opts.starter || 'plain', versionNumber: 0, revision: 1 };

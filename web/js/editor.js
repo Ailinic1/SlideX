@@ -19,9 +19,10 @@ import { thumb, slideContext } from './slides.js';
 import { createCanvas } from './canvas.js';
 import { paintInspector } from './inspector.js';
 import { openCommands, provideCommands } from './commands.js';
+import { openSlideLayouts, restyleDeck } from './generated.js';
 import {
   resolveSlide, resolveLayout, numbering, sectionsOf, layoutOf, makeSlide, makeElement,
-  moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone,
+  moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone, rebaseSlides,
   ELEMENT_TYPES, FIELD_KINDS, LAYOUT_KINDS, ASPECTS, FONT_PAIRINGS, applyFonts,
 } from '../shared/model.js';
 import { parseTable } from '../shared/charts.js';
@@ -1075,6 +1076,10 @@ export function editorRibbon() {
       ribGroup('Fields', INSERT_ITEMS.slice(14).map(insertButton)),
     ],
     design: [
+      ribGroup('Generate', [
+        ribBtn('A layout for this slide', 'dice', generateForSlide, { title: 'Six layouts at a time, in this deck\u2019s colours' }),
+        ribBtn('A style for the deck', 'shuffle', generateStyle, { small: true }),
+      ]),
       ribGroup('Layouts', [
         ribBtn('Edit the layout', 'layout', () => editLayout(), { small: true }),
         ribBtn('Change layout', 'replace', chooseLayout, { small: true }),
@@ -1145,6 +1150,49 @@ function choosePalette() {
       ]))),
       footer: (c) => [h('button.btn', { onclick: () => c.close() }, 'Cancel')],
     });
+  });
+}
+
+/** Six generated layouts for this slide, then six more. */
+function generateForSlide() {
+  const d = deck();
+  const slide = currentSlide();
+  if (!slide) return;
+  openSlideLayouts({
+    deck: d,
+    slide,
+    assets: app.open.assets,
+    assetUrl: (sha) => api.assetUrl(app.open.record.id, sha),
+    onUse: (layout) => {
+      // The layout joins the deck, and what this slide has written moves to the
+      // element of the same name on it.
+      const next = { ...d, layouts: [...d.layouts, layout] };
+      const { slides } = rebaseSlides(d, next, [slide]);
+      const moved = { ...slides[0], layout: layout.id };
+      d.layouts = next.layouts;
+      d.slides = d.slides.map((s) => (s.id === slide.id ? moved : s));
+      ed.current = moved.id;
+      ed.selection = [moved.id];
+      pushUndo('Generate a layout');
+      markDirty();
+      repaint();
+    },
+  });
+  return undefined;
+}
+
+/** A whole new generated style for the deck, told first what will move. */
+function generateStyle() {
+  const d = deck();
+  restyleDeck(d, {
+    onApply: (next) => {
+      Object.assign(d, { layouts: next.layouts, palette: next.palette, fonts: next.fonts, slides: next.slides });
+      ed.picked = [];
+      ed.layoutId = null;
+      pushUndo('A new style for the deck');
+      markDirty();
+      repaint();
+    },
   });
 }
 
@@ -1287,6 +1335,8 @@ provideCommands(() => {
     cmd('Change this slide\u2019s layout', 'replace', chooseLayout),
     cmd('Change the colours', 'palette', choosePalette),
     cmd('Change the fonts', 'text', chooseFonts),
+    cmd('Generate a layout for this slide', 'dice', generateForSlide),
+    cmd('Generate a new style for the deck', 'shuffle', generateStyle),
     cmd('Change the slide shape', 'columns', chooseAspect),
     cmd('Deck settings', 'gear', deckSettings),
     cmd('Shuffle the generated graphics', 'shuffle', shuffleAll),

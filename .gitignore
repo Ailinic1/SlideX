@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+# Written by `npm run test:ui`.
+assets/screens/
+.claude/
+
+# Built by desktop/package.py, desktop/fetch-node.py and PyInstaller.
+build/

@@ -518,6 +518,57 @@ export function agendaText(content, ctx) {
   }).join('\n');
 }
 
+/* ----------------------------------------------------------------- fonts */
+
+/**
+ * The pairings of typefaces a deck can be set in.
+ *
+ * Three families - sans, serif and mono - is the whole repertoire, because
+ * those are the three the PDF can promise every reader already has (see
+ * fonts.js). What is worth choosing is which does the headings and which does
+ * the words underneath them.
+ */
+export const FONT_PAIRINGS = [
+  { id: 'sans', label: 'Sans throughout', heading: 'sans', body: 'sans', why: 'The plainest, and the easiest to read from the back of a room.' },
+  { id: 'sans-serif', label: 'Sans headings, serif words', heading: 'sans', body: 'serif', why: 'Headings that cut, paragraphs that read.' },
+  { id: 'serif-sans', label: 'Serif headings, sans words', heading: 'serif', body: 'sans', why: 'A formal heading over plain words.' },
+  { id: 'serif', label: 'Serif throughout', heading: 'serif', body: 'serif', why: 'For a deck that is mostly prose.' },
+];
+
+/**
+ * Set the deck in a different pairing.
+ *
+ * Every element that was in the old heading face goes to the new one, and
+ * every element that was in the old body face goes to the new one. Monospace
+ * is left alone: a code block is monospaced because it is code, not because
+ * of a pairing.
+ */
+export function applyFonts(deck, pairing) {
+  const from = deck.fonts || { heading: 'sans', body: 'sans' };
+  const move = (family) => {
+    if (family === 'mono') return 'mono';
+    if (family === from.heading && from.heading !== from.body) return pairing.heading;
+    if (family === from.body && from.heading !== from.body) return pairing.body;
+    // When the deck was in one face throughout, headings are told apart from
+    // the words by their weight, which is what makes a heading a heading.
+    return family === from.heading ? pairing.heading : pairing.body;
+  };
+  const retype = (el) => {
+    if (!el.style || !el.style.family) return;
+    const heading = el.style.bold || (el.style.size || 0) >= 24;
+    el.style.family = el.style.family === 'mono' ? 'mono' : (heading ? pairing.heading : move(el.style.family));
+  };
+  for (const layout of deck.layouts || []) for (const el of layout.elements) retype(el);
+  for (const slide of deck.slides || []) {
+    for (const el of slide.extras || []) retype(el);
+    for (const ov of Object.values(slide.overrides || {})) {
+      if (ov.style && ov.style.family && ov.style.family !== 'mono') ov.style.family = ov.style.bold ? pairing.heading : pairing.body;
+    }
+  }
+  deck.fonts = { heading: pairing.heading, body: pairing.body, mono: 'mono' };
+  return deck;
+}
+
 /* ------------------------------------------------- a new generated style */
 
 /**

@@ -20,12 +20,13 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/run-tests.js && node test/api-test.js",
+    "test": "node test/run-tests.js && node test/no-llm-test.js && node test/api-test.js",
     "test:unit": "node test/run-tests.js",
     "test:api": "node test/api-test.js",
     "test:ui": "node test/ui-test.js",
     "test:window": "python3 test/window-test.py",
-    "dist:linux": "python3 desktop/package.py"
+    "dist:linux": "python3 desktop/package.py",
+    "test:guard": "node test/no-llm-test.js"
   },
   "engines": {
     "node": ">=18"

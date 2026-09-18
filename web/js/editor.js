@@ -22,7 +22,7 @@ import { openCommands, provideCommands } from './commands.js';
 import {
   resolveSlide, resolveLayout, numbering, sectionsOf, layoutOf, makeSlide, makeElement,
   moveSlides, insertSlides, duplicateSlides, removeSlides, slideTitle, newId, clone,
-  ELEMENT_TYPES, FIELD_KINDS, LAYOUT_KINDS, ASPECTS,
+  ELEMENT_TYPES, FIELD_KINDS, LAYOUT_KINDS, ASPECTS, FONT_PAIRINGS, applyFonts,
 } from '../shared/model.js';
 import { parseTable } from '../shared/charts.js';
 import { ribBtn, ribGroup, render, markDirty, refreshChrome, state as app, setEditorMount, deck } from './app.js';
@@ -1081,6 +1081,7 @@ export function editorRibbon() {
       ]),
       ribGroup('Look', [
         ribBtn('Palette', 'palette', choosePalette, { small: true }),
+        ribBtn('Fonts', 'text', chooseFonts, { small: true }),
         ribBtn('Shape', 'columns', chooseAspect, { small: true }),
         ribBtn('Deck settings', 'gear', deckSettings, { small: true }),
       ]),
@@ -1144,6 +1145,26 @@ function choosePalette() {
       ]))),
       footer: (c) => [h('button.btn', { onclick: () => c.close() }, 'Cancel')],
     });
+  });
+}
+
+function chooseFonts() {
+  const d = deck();
+  const now = d.fonts || { heading: 'sans', body: 'sans' };
+  openModal({
+    title: 'Fonts',
+    subtitle: 'Three faces, and the PDF names them Helvetica, Times and Courier - the ones every reader already has, so the screen and the file cannot disagree.',
+    size: 'narrow',
+    body: h('div.starter-list', FONT_PAIRINGS.map((p) => h('button.starter' + (p.heading === now.heading && p.body === now.body ? '.on' : ''), {
+      onclick: (e) => {
+        e.target.closest('.overlay').remove();
+        applyFonts(d, p);
+        pushUndo('Change the fonts');
+        markDirty();
+        repaint();
+      },
+    }, [h('div.starter-name', p.label), h('div.starter-why', p.why)]))),
+    footer: (c) => [h('button.btn', { onclick: () => c.close() }, 'Cancel')],
   });
 }
 
@@ -1265,6 +1286,7 @@ provideCommands(() => {
     cmd('Edit this slide\u2019s layout', 'layout', () => editLayout()),
     cmd('Change this slide\u2019s layout', 'replace', chooseLayout),
     cmd('Change the colours', 'palette', choosePalette),
+    cmd('Change the fonts', 'text', chooseFonts),
     cmd('Change the slide shape', 'columns', chooseAspect),
     cmd('Deck settings', 'gear', deckSettings),
     cmd('Shuffle the generated graphics', 'shuffle', shuffleAll),

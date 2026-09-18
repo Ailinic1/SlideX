@@ -7,7 +7,7 @@
 // panel nobody opens. Clicking an item goes to it - the slide, and the thing on
 // the slide - because a list you cannot act on is a list you learn to ignore.
 
-import { h, clear, openModal } from './ui.js';
+import { h, openModal } from './ui.js';
 import { icon } from './icons.js';
 import { renderSlide, contrastOf } from '../shared/scene.js';
 import { resolveSlide, numbering, slideTitle, referencesIn, layoutOf } from '../shared/model.js';

@@ -10,11 +10,9 @@
 // way.
 
 import { h, clear, toast, openModal, confirmDialog } from './ui.js';
-import { icon } from './icons.js';
-import { api } from './api.js';
 import { thumb, slideContext } from './slides.js';
 import { generateDeck, generateSlideLayouts, generateLayoutsFor, newSeed } from '../shared/generate.js';
-import { resolveLayout, resolveSlide, layoutOf, rebaseSlides, numbering, ASPECTS } from '../shared/model.js';
+import { resolveSlide, layoutOf, rebaseSlides, numbering, ASPECTS } from '../shared/model.js';
 import { PALETTES } from '../shared/color.js';
 
 /* ------------------------------------------------- generate a deck style */

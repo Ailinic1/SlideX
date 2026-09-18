@@ -10,7 +10,6 @@
 // picture.
 
 import { h, clear, toast, openModal, download } from './ui.js';
-import { icon } from './icons.js';
 import { postForBlob } from './api.js';
 import { renderSlide } from '../shared/scene.js';
 import { resolveSlide, numbering, slideTitle } from '../shared/model.js';

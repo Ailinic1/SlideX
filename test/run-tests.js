@@ -8,16 +8,16 @@ import zlib from 'zlib';
 import { test, assert, run } from './harness.js';
 import { measure, printable, unprintable } from '../web/shared/fonts.js';
 import { parseRich, layoutText, wordCount, indentLevel } from '../web/shared/text.js';
-import { parsePath, pathToD, arcToCubics } from '../web/shared/path.js';
-import { resolveColor, PALETTES, contrast, seriesColors, completePalette, textOn } from '../web/shared/color.js';
+import { parsePath, arcToCubics } from '../web/shared/path.js';
+import { resolveColor, PALETTES, contrast, seriesColors, textOn } from '../web/shared/color.js';
 import { renderChart, niceScale, parseTable, formatNumber, CHART_KINDS, sampleData } from '../web/shared/charts.js';
 import { renderPattern, PATTERN_KINDS, rng, hashSeed } from '../web/shared/patterns.js';
 import { GLYPHS, CONTENT_NAMES, searchGlyphs } from '../web/shared/glyphs.js';
-import { buildStarter, buildLayouts, STARTERS } from '../web/shared/starters.js';
+import { buildStarter, STARTERS } from '../web/shared/starters.js';
 import {
-  makeDeck, makeSlide, makeElement, resolveSlide, resolveLayout, layoutOf,
+  makeSlide, makeElement, resolveSlide, resolveLayout, layoutOf,
   moveSlides, insertSlides, duplicateSlides, removeSlides, referencesIn,
-  fillFields, agendaText, rebaseSlides, newId, clone, LAYOUT_KINDS,
+  fillFields, agendaText, rebaseSlides, newId, LAYOUT_KINDS,
 } from '../web/shared/model.js';
 import { numbering, slideTitle, sectionsOf, resolveReference } from '../web/shared/numbering.js';
 import { renderSlide, contrastOf } from '../web/shared/scene.js';
